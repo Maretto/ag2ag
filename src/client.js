@@ -2,7 +2,7 @@
 'use strict';
 
 // =============================================================================
-// a2a-local — Client
+// ag2ag — Client
 // Call other agents on localhost via A2A REST
 // =============================================================================
 
@@ -65,16 +65,27 @@ class AgentClient {
     return this._request(port, 'DELETE', `/task/${taskId}`);
   }
 
-  // Poll task until completed/failed/canceled or timeout
+  // Poll task until completed/failed/canceled/rejected or timeout
+  // Checks HTTP status before trusting response body
   async waitForTask(port, taskId, options = {}) {
     const interval = options.interval || 1000;
     const timeout = options.timeout || 60000;
     const start = Date.now();
 
     while (Date.now() - start < timeout) {
-      const { data: task } = await this.getTask(port, taskId);
-      if (['completed', 'failed', 'canceled', 'rejected'].includes(task.status?.state)) {
-        return task;
+      const res = await this.getTask(port, taskId);
+
+      if (res.status === 404) {
+        // Task doesn't exist yet or was deleted — keep polling
+      } else if (res.status >= 500) {
+        throw new Error(`Server error ${res.status} while polling task ${taskId}`);
+      } else if (res.status >= 400) {
+        throw new Error(`Client error ${res.status} while polling task ${taskId}`);
+      } else if (res.data?.status?.state) {
+        const state = res.data.status.state;
+        if (['completed', 'failed', 'canceled', 'rejected'].includes(state)) {
+          return res.data;
+        }
       }
       await new Promise(r => setTimeout(r, interval));
     }

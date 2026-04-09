@@ -2,7 +2,7 @@
 'use strict';
 
 // =============================================================================
-// a2a-local — Registry Manager
+// ag2ag — Registry Manager
 // Manages the local JSON registry of A2A agents
 // =============================================================================
 

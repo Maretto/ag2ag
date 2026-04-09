@@ -2,15 +2,17 @@
 'use strict';
 
 // =============================================================================
-// a2a-local — Agent Server Wrapper
+// ag2ag — Agent Server Wrapper
 // Creates a lightweight HTTP server exposing A2A endpoints
-// Uses @a2a-js/sdk for spec types, Node http for transport
+// Uses Node http for transport, @a2a-js/sdk for spec types
 // File-backed task persistence via TaskStore
 // =============================================================================
 
 const http = require('http');
-const { InMemoryTaskStore: SDKTaskStore, DefaultRequestHandler } = require('@a2a-js/sdk/server');
+const crypto = require('crypto');
 const { TaskStore } = require('./task-store');
+
+const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
 
 class AgentServer {
   constructor(options) {
@@ -43,15 +45,6 @@ class AgentServer {
 
   async _handleRequest(req, res) {
     const url = new URL(req.url, `http://localhost:${this.port}`);
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204);
-      return res.end();
-    }
 
     try {
       // GET /card — AgentCard
@@ -88,10 +81,11 @@ class AgentServer {
 
       // POST /task — Create task (SendMessage)
       if (req.method === 'POST' && url.pathname === '/task') {
-        const body = await this._readBody(req);
+        const body = await this._readBody(req, res);
+        if (body === null) return; // already responded (413)
         const message = typeof body === 'string' ? JSON.parse(body) : body;
 
-        const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const taskId = crypto.randomUUID();
         const task = {
           id: taskId,
           status: { state: 'submitted', timestamp: new Date().toISOString() },
@@ -139,11 +133,24 @@ class AgentServer {
     res.end(JSON.stringify(data));
   }
 
-  _readBody(req) {
+  _readBody(req, res) {
     return new Promise((resolve, reject) => {
       let body = '';
-      req.on('data', chunk => body += chunk);
+      let size = 0;
+      let overflowed = false;
+      req.on('data', chunk => {
+        if (overflowed) return; // discard data after overflow
+        size += chunk.length;
+        if (size > MAX_BODY_SIZE) {
+          overflowed = true;
+          this._json(res, 413, { error: 'Payload too large (max 1MB)' });
+          resolve(null);
+          return;
+        }
+        body += chunk;
+      });
       req.on('end', () => {
+        if (overflowed) return;
         try { resolve(body ? JSON.parse(body) : {}); }
         catch (e) { resolve(body); }
       });

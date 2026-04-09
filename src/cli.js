@@ -2,7 +2,7 @@
 'use strict';
 
 // =============================================================================
-// a2a-local — CLI
+// ag2ag — CLI
 // Command-line interface for managing A2A agents on a single host
 // =============================================================================
 
@@ -47,11 +47,11 @@ async function cmdInit() {
   ok(`Data dir: ${dataDir}`);
 
   console.log(`\n${C.bold}Next:${C.reset}`);
-  console.log(`  a2a-local register <name> --port <port> --unit <systemd-unit>`);
+  console.log(`  ag2ag register <name> --port <port> --unit <systemd-unit>`);
 }
 
 async function cmdRegister(name, args) {
-  if (!name) return err('Usage: a2a-local register <name> --port <port> --unit <unit>');
+  if (!name) return err('Usage: ag2ag register <name> --port <port> --unit <unit>');
 
   const port = parseInt(args.port) || registry.findAvailablePort();
   const unit = args.unit || '';
@@ -74,27 +74,27 @@ async function cmdRegister(name, args) {
 }
 
 async function cmdUnregister(name) {
-  if (!name) return err('Usage: a2a-local unregister <name>');
+  if (!name) return err('Usage: ag2ag unregister <name>');
   if (registry.remove(name)) ok(`"${name}" removed from registry`);
   else err(`"${name}" not found in registry`);
 }
 
 async function cmdStart(name) {
-  if (!name) return err('Usage: a2a-local start <name>');
+  if (!name) return err('Usage: ag2ag start <name>');
   const result = lifecycle.start(name);
   if (result.ok) ok(`${name} started (${result.unit})`);
   else err(result.error);
 }
 
 async function cmdStop(name) {
-  if (!name) return err('Usage: a2a-local stop <name>');
+  if (!name) return err('Usage: ag2ag stop <name>');
   const result = lifecycle.stop(name);
   if (result.ok) ok(`${name} stopped (${result.unit})`);
   else err(result.error);
 }
 
 async function cmdRestart(name) {
-  if (!name) return err('Usage: a2a-local restart <name>');
+  if (!name) return err('Usage: ag2ag restart <name>');
   const result = lifecycle.restart(name);
   if (result.ok) ok(`${name} restarted (${result.unit})`);
   else err(result.error);
@@ -103,11 +103,11 @@ async function cmdRestart(name) {
 async function cmdStatus(options = {}) {
   const agents = registry.list();
   if (agents.length === 0) {
-    info('No agents registered. Use `a2a-local register <name>` to add one.');
+    info('No agents registered. Use `ag2ag register <name>` to add one.');
     return;
   }
 
-  console.log(`\n${C.bold} a2a-local${C.reset} — ${agents.length} agent(s)\n`);
+  console.log(`\n${C.bold} ag2ag${C.reset} — ${agents.length} agent(s)\n`);
   console.log(` ${pad('STATUS', 4)} ${pad('NAME', 18)} ${pad('PORT', 7)} ${pad('UNIT', 35)} ${options.health ? pad('HEALTH', 12) : ''}`);
   console.log(` ${'─'.repeat(4)} ${'─'.repeat(18)} ${'─'.repeat(7)} ${'─'.repeat(35)}${options.health ? ' ' + '─'.repeat(12) : ''}`);
 
@@ -142,7 +142,7 @@ async function cmdStatus(options = {}) {
 }
 
 async function cmdCard(name) {
-  if (!name) return err('Usage: a2a-local card <name>');
+  if (!name) return err('Usage: ag2ag card <name>');
   const agent = registry.get(name);
   if (!agent) return err(`"${name}" not found in registry`);
 
@@ -159,13 +159,13 @@ async function cmdCard(name) {
 }
 
 async function cmdCall(name, args) {
-  if (!name) return err('Usage: a2a-local call <name> <message>');
+  if (!name) return err('Usage: ag2ag call <name> <message>');
   const agent = registry.get(name);
   if (!agent) return err(`"${name}" not found in registry`);
   if (agent.port <= 0) return err(`"${name}" has no HTTP port (Discord-only agent)`);
 
   const message = args._message;
-  if (!message) return err('Usage: a2a-local call <name> <message>');
+  if (!message) return err('Usage: ag2ag call <name> <message>');
 
   const payload = {
     role: 'user',
@@ -210,7 +210,7 @@ async function cmdList() {
 }
 
 async function cmdLogs(name, args) {
-  if (!name) return err('Usage: a2a-local logs <name>');
+  if (!name) return err('Usage: ag2ag logs <name>');
   console.log(lifecycle.getLogs(name, parseInt(args.lines) || 50));
 }
 
@@ -239,10 +239,10 @@ function parseArgs(argv) {
 
 function showHelp() {
   console.log(`
-${C.bold}a2a-local${C.reset} ${C.dim}v0.1.0${C.reset} — A2A Operational Layer for Single-Host Environments
+${C.bold}ag2ag${C.reset} ${C.dim}v0.1.0${C.reset} — A2A Operational Layer for Single-Host Environments
 
 ${C.bold}Usage:${C.reset}
-  a2a-local <command> [options]
+  ag2ag <command> [options]
 
 ${C.bold}Commands:${C.reset}
   init                              Initialize registry and data directories

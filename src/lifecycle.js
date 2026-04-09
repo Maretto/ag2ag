@@ -2,16 +2,25 @@
 'use strict';
 
 // =============================================================================
-// a2a-local — Lifecycle Manager
+// ag2ag — Lifecycle Manager
 // Systemd-first agent lifecycle management
 // ALWAYS resolves unit name from registry. NEVER infers.
+// Uses execFileSync — no shell injection surface.
 // =============================================================================
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
-function run(cmd) {
+// Validate unit name: only allow systemd-safe characters
+function _validateUnitName(unit) {
+  if (!unit || typeof unit !== 'string') return false;
+  // systemd unit names: alphanumeric, dash, dot, at-sign, escape, colon, underscore
+  return /^[a-zA-Z0-9_.@:-]+$/.test(unit) && unit.length <= 256;
+}
+
+function run(args) {
   try {
-    return { ok: true, output: execSync(cmd, { encoding: 'utf8', stdio: 'pipe' }).trim() };
+    const output = execFileSync('systemctl', args, { encoding: 'utf8', stdio: 'pipe', timeout: 30000 });
+    return { ok: true, output: output.trim() };
   } catch (e) {
     return { ok: false, output: e.stdout?.toString().trim() || '', stderr: e.stderr?.toString().trim() || e.message };
   }
@@ -22,11 +31,12 @@ class Lifecycle {
     this.registry = registry;
   }
 
-  // Always resolve from registry. Never guess.
+  // Always resolve from registry. Never guess. Validate unit name.
   _resolveUnit(agentName) {
     const agent = this.registry.get(agentName);
     if (!agent) return { error: `Agent "${agentName}" not found in registry` };
     if (!agent.systemdUnit) return { error: `Agent "${agentName}" has no systemd unit configured` };
+    if (!_validateUnitName(agent.systemdUnit)) return { error: `Invalid unit name: "${agent.systemdUnit}"` };
     return { unit: agent.systemdUnit };
   }
 
@@ -35,9 +45,9 @@ class Lifecycle {
     if (resolved.error) return { ok: false, error: resolved.error };
     const { unit } = resolved;
 
-    const r = run(`systemctl start ${unit}`);
+    const r = run(['start', unit]);
     if (!r.ok) {
-      const exists = run(`systemctl cat ${unit} >/dev/null 2>&1`);
+      const exists = run(['cat', unit]);
       if (!exists.ok) return { ok: false, error: `Unit ${unit} does not exist on this system. Is the agent deployed?` };
       return { ok: false, error: `Failed to start ${unit}: ${r.stderr}` };
     }
@@ -49,7 +59,7 @@ class Lifecycle {
     if (resolved.error) return { ok: false, error: resolved.error };
     const { unit } = resolved;
 
-    const r = run(`systemctl stop ${unit}`);
+    const r = run(['stop', unit]);
     if (!r.ok) return { ok: false, error: `Failed to stop ${unit}: ${r.stderr}` };
     return { ok: true, unit };
   }
@@ -59,7 +69,7 @@ class Lifecycle {
     if (resolved.error) return { ok: false, error: resolved.error };
     const { unit } = resolved;
 
-    const r = run(`systemctl restart ${unit}`);
+    const r = run(['restart', unit]);
     if (!r.ok) return { ok: false, error: `Failed to restart ${unit}: ${r.stderr}` };
     return { ok: true, unit };
   }
@@ -67,7 +77,7 @@ class Lifecycle {
   isActive(agentName) {
     const resolved = this._resolveUnit(agentName);
     if (resolved.error) return false;
-    const r = run(`systemctl is-active ${resolved.unit}`);
+    const r = run(['is-active', resolved.unit]);
     return r.ok && r.output === 'active';
   }
 
@@ -76,8 +86,8 @@ class Lifecycle {
     if (resolved.error) return { unit: null, active: 'unknown', enabled: 'unknown', error: resolved.error };
 
     const { unit } = resolved;
-    const activeR = run(`systemctl is-active ${unit}`);
-    const enabledR = run(`systemctl is-enabled ${unit} 2>/dev/null`);
+    const activeR = run(['is-active', unit]);
+    const enabledR = run(['is-enabled', unit]);
     return {
       unit,
       active: activeR.ok ? activeR.output : 'unknown',
@@ -88,7 +98,8 @@ class Lifecycle {
   getLogs(agentName, lines = 50) {
     const resolved = this._resolveUnit(agentName);
     if (resolved.error) return resolved.error;
-    const r = run(`journalctl -u ${resolved.unit} --no-pager -n ${lines}`);
+    const safeLines = Math.max(1, Math.min(parseInt(lines) || 50, 500));
+    const r = run(['--no-pager', `-n${safeLines}`, '-u', resolved.unit]);
     return r.ok ? r.output : `Could not read logs for ${resolved.unit}`;
   }
 
@@ -108,7 +119,7 @@ class Lifecycle {
     } = options;
 
     const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-    const unitName = `a2a-${safeName}`;
+    const unitName = `ag2ag-${safeName}`;
 
     const envLines = Object.entries(envVars)
       .filter(([, v]) => v !== undefined)
