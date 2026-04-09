@@ -37,9 +37,9 @@ Build an operational layer for running A2A-compliant agents on a single Linux ho
   {
     "agents": [
       {
-        "name": "diagnosticador",
-        "port": 3102,
-        "systemdUnit": "daemonlab-diagnosticador",
+        "name": "my-agent",
+        "port": 5001,
+        "systemdUnit": "my-agent.service",
         "card": { /* full AgentCard */ },
         "registeredAt": "ISO date"
       }

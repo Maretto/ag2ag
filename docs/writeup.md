@@ -123,12 +123,12 @@ Six real services were registered in the local registry:
 
 | Agent | Port | Systemd Unit | A2A-Ready? |
 |---|---|---|---|
-| API Gateway | :3099 | daemonlab-api-gateway | ✅ `/card` live |
-| Mesh Ping | :3101 | daemonlab-mesh-ping | ✅ `/card` live |
-| SQL Butler | — | daemonlab-sql-butler | ❌ Discord-only |
-| Lab Pulse | — | daemonlab-lab-pulse | ❌ Discord-only |
-| VPS Sentinel | — | daemonlab-vps-sentinel | ❌ No HTTP |
-| The Spine | — | daemonlab-the-spine | ❌ Internal only |
+| API Gateway | :3099 | api-gateway.service | ✅ `/card` live |
+| Mesh Ping | :3101 | mesh-ping.service | ✅ `/card` live |
+| SQL Agent | — | sql-agent.service | ❌ Discord-only |
+| Activity Monitor | — | activity-monitor.service | ❌ Discord-only |
+| Health Checker | — | health-checker.service | ❌ No HTTP |
+| Internal API | — | internal-api.service | ❌ Internal only |
 
 **4 of 6 services are Discord-only or internal.** They are registered in the A2A registry (for lifecycle management) but cannot respond to A2A calls until they add HTTP endpoints.
 

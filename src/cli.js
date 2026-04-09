@@ -265,11 +265,11 @@ ${C.bold}Register Options:${C.reset}
   --skills <skill1,skill2>          Comma-separated skill names
 
 ${C.bold}Examples:${C.reset}
-  a2a-local init
-  a2a-local register diagnosticador --port 3102 --unit daemonlab-diagnosticador
-  a2a-local status --health
-  a2a-local call echo-agent "Hello world"
-  a2a-local call echo-agent "test" --raw
+  ag2ag init
+  ag2ag register my-agent --port 5001 --description "Does useful things"
+  ag2ag status --health
+  ag2ag call echo-agent "Hello world"
+  ag2ag call echo-agent "test" --raw
 `);
 }
 
