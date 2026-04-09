@@ -136,7 +136,7 @@ Six real services were registered in the local registry:
 
 > *"A tese está validada para um ecossistema single-host pequeno, com serviços reais descobríveis e composição útil via A2A."*
 >
-> — Vitor Maretto, operator and technical reviewer, April 9 2026
+> — the operator and technical reviewer
 
 This was stated after reviewing the implementation, running tests, and seeing real services respond via A2A.
 
@@ -291,7 +291,7 @@ These are possibilities, not commitments. Each should be evaluated independently
 
 - **OS:** Ubuntu 22.04 LTS
 - **Node:** v22.22.2
-- **Host:** Contabo VPS (4 vCPU, 8GB RAM)
+- **Host:** Single VPS (4 vCPU, 8GB RAM)
 - **A2A SDK:** `@a2a-js/sdk` v0.3.13
 - **Date:** April 8-9, 2026
 - **Total development time:** ~4 hours across 2 sessions
