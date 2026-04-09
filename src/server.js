@@ -61,6 +61,46 @@ class AgentServer {
         if (!task) return this._json(res, 404, { error: 'Task not found' });
         return this._json(res, 200, task);
       }
+      
+      // GET /task/:id/stream — SSE for task updates
+      const streamMatch = url.pathname.match(/^\/task\/([a-zA-Z0-9_-]+)\/stream$/);
+      if (req.method === 'GET' && streamMatch) {
+        const taskId = streamMatch[1];
+        const task = this.taskStore.get(this.agentName, taskId);
+        if (!task) return this._json(res, 404, { error: 'Task not found' });
+
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+        
+        // Initial state
+        res.write(`data: ${JSON.stringify({ type: 'status', task })}\n\n`);
+
+        if (['completed', 'failed', 'canceled', 'rejected'].includes(task.status.state)) {
+            res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
+            return res.end();
+        }
+
+        // Extremely simple polling loop to simulate SSE events (since taskStore is file backed)
+        const interval = setInterval(() => {
+          const currentTask = this.taskStore.get(this.agentName, taskId);
+          if (!currentTask) {
+             clearInterval(interval);
+             return res.end();
+          }
+          res.write(`data: ${JSON.stringify({ type: 'status', task: currentTask })}\n\n`);
+          if (['completed', 'failed', 'canceled', 'rejected'].includes(currentTask.status.state)) {
+             clearInterval(interval);
+             res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
+             res.end();
+          }
+        }, 1000);
+        
+        req.on('close', () => clearInterval(interval));
+        return;
+      }
 
       // GET /tasks — List tasks
       if (req.method === 'GET' && url.pathname === '/tasks') {
