@@ -4,10 +4,6 @@ config/registry.json
 *.log
 .DS_Store
 
-# Publishing drafts — don't belong in source repo
-tutorial.md
-*.draft.md
-
 # Internal / generated
 .env
 .env.*
