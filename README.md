@@ -2,11 +2,30 @@
 
 **An operational layer for A2A-compatible agents on single-host environments.**
 
+> ⚠️ **Experimental.** Validated on a small single-host setup (6 agents, 1 VPS). Not production-ready. See [When to use](#when-to-use--when-not-to-use) and [SECURITY.md](SECURITY.md).
+
 Runs on a VPS, homelab server, or dev VM. No Docker. No Kubernetes. Just Node.js + systemd.
 
 Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk).
 
 > **Not affiliated with, endorsed by, or connected to the A2A Protocol project, Google, or the Linux Foundation.**
+
+---
+
+## When to use / When not to use
+
+**Use ag2ag if:**
+- You run agents on a single Linux host (VPS, homelab, dev VM)
+- You want A2A discoverability without Docker or Kubernetes
+- You need a lightweight CLI to manage agent lifecycle via systemd
+- You're prototyping or experimenting with A2A locally
+
+**Do NOT use ag2ag if:**
+- You need multi-host or distributed deployment
+- You need high concurrency (untested under parallel load)
+- You need authentication, encryption, or network-level security
+- You're building a production system requiring isolation between agents
+- You need streaming responses (SSE not implemented)
 
 ---
 
@@ -43,6 +62,33 @@ ag2ag card my-agent
 ag2ag call my-agent "hello"
 ```
 
+## Real output
+
+```
+$ ag2ag status --health
+
+ ag2ag — 3 agent(s)
+
+ STAT NAME               PORT    UNIT                     HEALTH
+ ●    api-gateway        :3099   api-gateway.service      responding
+ ●    mesh-ping          :3101   mesh-ping.service        responding
+ ●    echo-agent         :5000   echo-agent.service       responding
+```
+
+```
+$ ag2ag call health-proxy "ecosystem health"
+
+📊 Ecosystem Health Report
+
+🌐 API Gateway: UP (2min uptime)
+📡 Mesh Ping: 4/6 services UP
+
+  🟢 API Gateway: UP | 14ms | up 100%
+  🟢 Mesh Ping: UP | 8ms | up 100%
+  🟢 Internal API: UP | 16ms | up 100%
+  🔴 Sandbox: DOWN | 13ms | up 0%
+```
+
 ## CLI commands
 
 ```
@@ -60,7 +106,7 @@ ag2ag logs <name>             journalctl for the agent
 ## Building an agent
 
 ```javascript
-const { AgentServer } = require('ag2ag/src/server');
+const { AgentServer } = require('ag2ag');
 
 const card = {
   schemaVersion: '1.0',
