@@ -1,6 +1,6 @@
 # ag2ag
 
-**An operational layer for A2A-compatible agents on single-host environments.**
+**Run A2A-compatible agents on a single host. Node.js + systemd. No Docker. No Kubernetes.**
 
 > ⚠️ **Experimental.** Validated on a small single-host setup (6 agents, 1 VPS). Not production-ready. See [When to use](#when-to-use--when-not-to-use) and [SECURITY.md](SECURITY.md).
 
@@ -19,6 +19,7 @@ Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-
 - You want A2A discoverability without Docker or Kubernetes
 - You need a lightweight CLI to manage agent lifecycle via systemd
 - You're prototyping or experimenting with A2A locally
+- You want agents to discover and call each other on localhost
 
 **Do NOT use ag2ag if:**
 - You need multi-host or distributed deployment
@@ -149,6 +150,40 @@ See `examples/` for complete agents:
 | Task persistence | JSONL per agent |
 | A2A compliance | `@a2a-js/sdk` v0.3.13 |
 | External dependencies | 1 |
+
+## Alternatives
+
+| Tool | Best for | ag2ag difference |
+|---|---|---|
+| **Docker Compose** | Multi-container apps with networking | ag2ag skips containers entirely — lighter for simple agents |
+| **Kubernetes** | Large-scale distributed systems | ag2ag targets single-host — no cluster overhead |
+| **Nomad** | Mixed workload orchestration | ag2ag is agent-specific with A2A discovery built-in |
+| **PM2** | Node.js process management | ag2ag adds A2A protocol, discovery, and inter-agent messaging |
+| **systemd raw** | Service management | ag2ag wraps systemd with registry, CLI, and A2A compliance |
+| **A2A SDK alone** | Building A2A agents from scratch | ag2ag provides the operational layer (registry, lifecycle, persistence) |
+
+## FAQ
+
+**What is A2A?**
+A2A (Agent-to-Agent) is an open protocol by the Linux Foundation for AI agent interoperability. It defines how agents discover each other's capabilities and collaborate. See [a2a-protocol.org](https://a2a-protocol.org).
+
+**How is this different from the A2A SDK?**
+The `@a2a-js/sdk` provides protocol types and server helpers. ag2ag adds the operational layer on top: local registry, systemd lifecycle management, CLI, task persistence, and single-host conventions.
+
+**Can I run AI agents with this?**
+Yes. Any agent that exposes an A2A-compatible HTTP interface works. The handler function receives messages and returns responses — you decide what the agent does (call an LLM, query a database, monitor services, etc).
+
+**Does it work without systemd?**
+Lifecycle commands (start/stop/restart) require systemd. But registry, discovery, messaging, and the HTTP server work independently.
+
+**Is this secure?**
+Not for production. All communication is localhost HTTP with no authentication. See [SECURITY.md](SECURITY.md) for known risks and mitigations.
+
+**How do I run AI agents locally?**
+Install ag2ag, register your agents with their ports, start them. They discover each other via AgentCards and communicate via A2A messages on localhost.
+
+**What Node.js version is required?**
+Node.js 18+ (uses `fetch`, `crypto.randomUUID`). Tested on v22.
 
 ## Tested on
 

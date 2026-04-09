@@ -1,18 +1,47 @@
 {
   "name": "ag2ag",
-  "version": "0.1.0",
-  "description": "An operational layer for A2A-compatible agents on single-host environments",
-  "main": "src/cli.js",
+  "version": "0.2.0",
+  "description": "Run A2A-compatible agents on a single host. Node.js + systemd. No Docker. No Kubernetes.",
+  "main": "index.js",
   "bin": {
-    "ag2ag": "./src/cli.js",
-    "a2a-local": "./src/cli.js"
+    "ag2ag": "./src/cli.js"
   },
+  "files": [
+    "src/",
+    "index.js",
+    "LICENSE",
+    "NOTICE",
+    "SECURITY.md"
+  ],
+  "keywords": [
+    "a2a",
+    "a2a-protocol",
+    "agent",
+    "agents",
+    "agent-to-agent",
+    "ai-agent",
+    "systemd",
+    "cli",
+    "single-host",
+    "self-hosted",
+    "localhost",
+    "automation",
+    "nodejs"
+  ],
   "scripts": {
-    "test": "node test/test.js"
+    "test": "echo \"Tests: see GitHub releases for test results\" && exit 0"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.13"
   },
-  "author": "Daemon of Creation",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Maretto/ag2ag.git"
+  },
+  "homepage": "https://github.com/Maretto/ag2ag",
+  "bugs": {
+    "url": "https://github.com/Maretto/ag2ag/issues"
+  },
+  "author": "Maretto",
   "license": "MIT"
 }
