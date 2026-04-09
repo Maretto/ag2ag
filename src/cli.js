@@ -2,19 +2,18 @@
 'use strict';
 
 // =============================================================================
-// a2a-local — CLI
+// ag2ag — CLI
 // Command-line interface for managing A2A agents on a single host
 // =============================================================================
 
 const { Registry } = require('./registry');
 const { Lifecycle } = require('./lifecycle');
-const { AgentClient } = require('./client');
+const { AgentClient, DEFAULTS } = require('./client');
 const path = require('path');
 const fs = require('fs');
 
 const registry = new Registry();
 const lifecycle = new Lifecycle(registry);
-const client = new AgentClient();
 
 const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m', underline: '\x1b[4m',
@@ -27,6 +26,13 @@ const info = (msg) => console.log(`${C.cyan}→${C.reset} ${msg}`);
 const dim = (msg) => console.log(`${C.gray}  ${msg}${C.reset}`);
 
 function pad(s, n) { return (s + ' '.repeat(n)).slice(0, n); }
+
+function parseMs(value) {
+  if (!value) return undefined;
+  if (value.endsWith('s')) return parseInt(value, 10) * 1000;
+  if (value.endsWith('m')) return parseInt(value, 10) * 60_000;
+  return parseInt(value, 10);
+}
 
 // ─── Commands ──────────────────────────────────────────────────────────────
 
@@ -47,11 +53,11 @@ async function cmdInit() {
   ok(`Data dir: ${dataDir}`);
 
   console.log(`\n${C.bold}Next:${C.reset}`);
-  console.log(`  a2a-local register <name> --port <port> --unit <systemd-unit>`);
+  console.log(`  ag2ag register <name> --port <port> --unit <systemd-unit>`);
 }
 
 async function cmdRegister(name, args) {
-  if (!name) return err('Usage: a2a-local register <name> --port <port> --unit <unit>');
+  if (!name) return err('Usage: ag2ag register <name> --port <port> --unit <unit>');
 
   const port = parseInt(args.port) || registry.findAvailablePort();
   const unit = args.unit || '';
@@ -74,27 +80,27 @@ async function cmdRegister(name, args) {
 }
 
 async function cmdUnregister(name) {
-  if (!name) return err('Usage: a2a-local unregister <name>');
+  if (!name) return err('Usage: ag2ag unregister <name>');
   if (registry.remove(name)) ok(`"${name}" removed from registry`);
   else err(`"${name}" not found in registry`);
 }
 
 async function cmdStart(name) {
-  if (!name) return err('Usage: a2a-local start <name>');
+  if (!name) return err('Usage: ag2ag start <name>');
   const result = lifecycle.start(name);
   if (result.ok) ok(`${name} started (${result.unit})`);
   else err(result.error);
 }
 
 async function cmdStop(name) {
-  if (!name) return err('Usage: a2a-local stop <name>');
+  if (!name) return err('Usage: ag2ag stop <name>');
   const result = lifecycle.stop(name);
   if (result.ok) ok(`${name} stopped (${result.unit})`);
   else err(result.error);
 }
 
 async function cmdRestart(name) {
-  if (!name) return err('Usage: a2a-local restart <name>');
+  if (!name) return err('Usage: ag2ag restart <name>');
   const result = lifecycle.restart(name);
   if (result.ok) ok(`${name} restarted (${result.unit})`);
   else err(result.error);
@@ -103,11 +109,13 @@ async function cmdRestart(name) {
 async function cmdStatus(options = {}) {
   const agents = registry.list();
   if (agents.length === 0) {
-    info('No agents registered. Use `a2a-local register <name>` to add one.');
+    info('No agents registered. Use `ag2ag register <name>` to add one.');
     return;
   }
 
-  console.log(`\n${C.bold} a2a-local${C.reset} — ${agents.length} agent(s)\n`);
+  const client = new AgentClient({ timeout: 5000 });
+
+  console.log(`\n${C.bold} ag2ag${C.reset} — ${agents.length} agent(s)\n`);
   console.log(` ${pad('STATUS', 4)} ${pad('NAME', 18)} ${pad('PORT', 7)} ${pad('UNIT', 35)} ${options.health ? pad('HEALTH', 12) : ''}`);
   console.log(` ${'─'.repeat(4)} ${'─'.repeat(18)} ${'─'.repeat(7)} ${'─'.repeat(35)}${options.health ? ' ' + '─'.repeat(12) : ''}`);
 
@@ -115,7 +123,6 @@ async function cmdStatus(options = {}) {
     const sysd = agent.systemdUnit ? lifecycle.getStatus(agent.name) : null;
     const active = sysd?.active === 'active';
     const statusIcon = active ? `${C.green}●${C.reset}` : sysd?.active === 'failed' ? `${C.red}✗${C.reset}` : `${C.yellow}○${C.reset}`;
-    const statusText = active ? `${C.green}up${C.reset}` : sysd?.active || `${C.dim}—${C.reset}`;
 
     let healthCol = '';
     if (options.health && agent.port > 0) {
@@ -142,9 +149,11 @@ async function cmdStatus(options = {}) {
 }
 
 async function cmdCard(name) {
-  if (!name) return err('Usage: a2a-local card <name>');
+  if (!name) return err('Usage: ag2ag card <name>');
   const agent = registry.get(name);
   if (!agent) return err(`"${name}" not found in registry`);
+
+  const client = new AgentClient({ timeout: 10000 });
 
   // Live fetch first
   if (agent.port > 0) {
@@ -159,13 +168,19 @@ async function cmdCard(name) {
 }
 
 async function cmdCall(name, args) {
-  if (!name) return err('Usage: a2a-local call <name> <message>');
+  if (!name) return err('Usage: ag2ag call <name> <message>');
   const agent = registry.get(name);
   if (!agent) return err(`"${name}" not found in registry`);
   if (agent.port <= 0) return err(`"${name}" has no HTTP port (Discord-only agent)`);
 
   const message = args._message;
-  if (!message) return err('Usage: a2a-local call <name> <message>');
+  if (!message) return err('Usage: ag2ag call <name> <message>');
+
+  const requestTimeout = parseMs(args.timeout) || DEFAULTS.requestTimeout;
+  const pollTimeout = parseMs(args.pollTimeout) || DEFAULTS.pollTimeout;
+  const pollInterval = parseMs(args.pollInterval) || DEFAULTS.pollInterval;
+
+  const client = new AgentClient({ timeout: requestTimeout });
 
   const payload = {
     role: 'user',
@@ -177,7 +192,8 @@ async function cmdCall(name, args) {
     info(`Task ${task.id} → ${task.status.state}`);
 
     if (['submitted', 'working'].includes(task.status.state)) {
-      const result = await client.waitForTask(agent.port, task.id, { timeout: 180000 }); // 3min for CLI calls
+      info(`Polling (timeout: ${pollTimeout/1000}s, interval: ${pollInterval/1000}s)`);
+      const result = await client.waitForTask(agent.port, task.id, { timeout: pollTimeout, interval: pollInterval });
       if (result.status?.state === 'completed') {
         ok('Completed');
         if (result.artifacts?.length) {
@@ -210,7 +226,7 @@ async function cmdList() {
 }
 
 async function cmdLogs(name, args) {
-  if (!name) return err('Usage: a2a-local logs <name>');
+  if (!name) return err('Usage: ag2ag logs <name>');
   console.log(lifecycle.getLogs(name, parseInt(args.lines) || 50));
 }
 
@@ -218,7 +234,6 @@ async function cmdLogs(name, args) {
 
 function parseArgs(argv) {
   const args = { _: [], _message: '' };
-  let capturing = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith('--')) {
       const key = argv[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -239,10 +254,10 @@ function parseArgs(argv) {
 
 function showHelp() {
   console.log(`
-${C.bold}a2a-local${C.reset} ${C.dim}v0.1.0${C.reset} — A2A Operational Layer for Single-Host Environments
+${C.bold}ag2ag${C.reset} ${C.dim}v0.3.0${C.reset} — A2A Operational Layer for Single-Host Environments
 
 ${C.bold}Usage:${C.reset}
-  a2a-local <command> [options]
+  ag2ag <command> [options]
 
 ${C.bold}Commands:${C.reset}
   init                              Initialize registry and data directories
@@ -253,7 +268,7 @@ ${C.bold}Commands:${C.reset}
   restart <name>                    Restart agent via systemd
   status [--health]                 Show all agents (with HTTP health check)
   card <name>                       Show agent's AgentCard (live or registry)
-  call <name> <message> [--raw]     Send A2A message to agent
+  call <name> <message> [options]   Send A2A message to agent
   list                              List all registered agents
   logs <name> [--lines N]           Show agent logs (journalctl)
 
@@ -264,12 +279,27 @@ ${C.bold}Register Options:${C.reset}
   --url <url>                       Agent URL (default: http://127.0.0.1:<port>)
   --skills <skill1,skill2>          Comma-separated skill names
 
+${C.bold}Call Options:${C.reset}
+  --timeout <ms|Ns|Nm>             HTTP request timeout (default: ${DEFAULTS.requestTimeout/1000}s)
+  --poll-timeout <ms|Ns|Nm>        Polling timeout for result (default: ${DEFAULTS.pollTimeout/1000}s)
+  --poll-interval <ms|Ns|Nm>       Time between polls (default: ${DEFAULTS.pollInterval/1000}s)
+  --raw                             Output raw JSON artifacts
+
+${C.bold}Timeout Formats:${C.reset}
+  Plain number = milliseconds  |  30s = 30 seconds  |  5m = 5 minutes
+
+${C.bold}Environment Variables:${C.reset}
+  AG2AG_REQUEST_TIMEOUT   Default HTTP request timeout (ms)
+  AG2AG_POLL_TIMEOUT      Default polling timeout (ms)
+  AG2AG_POLL_INTERVAL     Default polling interval (ms)
+
 ${C.bold}Examples:${C.reset}
-  a2a-local init
-  a2a-local register diagnosticador --port 3102 --unit daemonlab-diagnosticador
-  a2a-local status --health
-  a2a-local call echo-agent "Hello world"
-  a2a-local call echo-agent "test" --raw
+  ag2ag init
+  ag2ag register diagnosticador --port 3102 --unit daemonlab-diagnosticador
+  ag2ag status --health
+  ag2ag call echo-agent "Hello world"
+  ag2ag call deep-analyzer "Analyze X" --timeout 60s --poll-timeout 10m
+  ag2ag call echo-agent "test" --raw
 `);
 }
 

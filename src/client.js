@@ -8,12 +8,20 @@
 
 const http = require('http');
 
+// Defaults — can be overridden via constructor options or env vars
+const DEFAULTS = {
+  requestTimeout: parseInt(process.env.AG2AG_REQUEST_TIMEOUT, 10) || 120_000,  // 2min per HTTP request
+  pollTimeout:    parseInt(process.env.AG2AG_POLL_TIMEOUT, 10)    || 300_000,  // 5min waitForTask polling
+  pollInterval:   parseInt(process.env.AG2AG_POLL_INTERVAL, 10)   || 1_000,    // 1s between polls
+};
+
 class AgentClient {
   constructor(options = {}) {
-    this.timeout = options.timeout || 120000; // 2min default for individual requests
+    this.timeout = options.timeout || DEFAULTS.requestTimeout;
   }
 
-  async _request(port, method, path, body = null) {
+  async _request(port, method, path, body = null, timeoutOverride) {
+    const timeout = timeoutOverride || this.timeout;
     return new Promise((resolve, reject) => {
       const opts = {
         hostname: '127.0.0.1',
@@ -21,7 +29,7 @@ class AgentClient {
         path,
         method,
         headers: { 'Content-Type': 'application/json' },
-        timeout: this.timeout,
+        timeout,
       };
 
       const req = http.request(opts, res => {
@@ -67,9 +75,10 @@ class AgentClient {
 
   // Poll task until completed/failed/canceled/rejected or timeout
   // Checks HTTP status before trusting response body
+  // Options: { timeout: ms, interval: ms }
   async waitForTask(port, taskId, options = {}) {
-    const interval = options.interval || 1000;
-    const timeout = options.timeout || 300000; // 5min default for waitForTask polling
+    const interval = options.interval || DEFAULTS.pollInterval;
+    const timeout  = options.timeout  || DEFAULTS.pollTimeout;
     const start = Date.now();
 
     while (Date.now() - start < timeout) {
@@ -93,4 +102,4 @@ class AgentClient {
   }
 }
 
-module.exports = { AgentClient };
+module.exports = { AgentClient, DEFAULTS };
