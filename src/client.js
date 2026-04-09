@@ -32,6 +32,9 @@ class AgentClient {
             const parsed = JSON.parse(data);
             resolve({ status: res.statusCode, data: parsed });
           } catch (e) {
+            if (data && res.statusCode >= 200 && res.statusCode < 300) {
+               console.warn(`[AgentClient] Warning: Failed to parse JSON response: ${e.message}`);
+            }
             resolve({ status: res.statusCode, data });
           }
         });
@@ -71,20 +74,31 @@ class AgentClient {
     const interval = options.interval || 1000;
     const timeout = options.timeout || 60000;
     const start = Date.now();
+    let consecutiveErrors = 0;
 
     while (Date.now() - start < timeout) {
-      const res = await this.getTask(port, taskId);
+      try {
+        const res = await this.getTask(port, taskId);
+        consecutiveErrors = 0; // reset on success
 
-      if (res.status === 404) {
-        // Task doesn't exist yet or was deleted — keep polling
-      } else if (res.status >= 500) {
-        throw new Error(`Server error ${res.status} while polling task ${taskId}`);
-      } else if (res.status >= 400) {
-        throw new Error(`Client error ${res.status} while polling task ${taskId}`);
-      } else if (res.data?.status?.state) {
-        const state = res.data.status.state;
-        if (['completed', 'failed', 'canceled', 'rejected'].includes(state)) {
-          return res.data;
+        if (res.status === 404) {
+          // Task doesn't exist yet or was deleted — keep polling
+        } else if (res.status >= 500) {
+          throw new Error(`Server error ${res.status} while polling task ${taskId}`);
+        } else if (res.status >= 400) {
+          throw new Error(`Client error ${res.status} while polling task ${taskId}`);
+        } else if (res.data?.status?.state) {
+          const state = res.data.status.state;
+          if (['completed', 'failed', 'canceled', 'rejected'].includes(state)) {
+            return res.data;
+          }
+        }
+      } catch (e) {
+        consecutiveErrors++;
+        console.warn(`[AgentClient] Warning: Error polling task ${taskId} (Attempt ${consecutiveErrors}): ${e.message}`);
+        // If we fail 5 times consecutively, abort instead of trying until full timeout
+        if (consecutiveErrors >= 5) {
+            throw new Error(`Task ${taskId} polling failed after 5 consecutive errors: ${e.message}`);
         }
       }
       await new Promise(r => setTimeout(r, interval));

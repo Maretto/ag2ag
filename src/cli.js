@@ -53,9 +53,22 @@ async function cmdInit() {
 async function cmdRegister(name, args) {
   if (!name) return err('Usage: ag2ag register <name> --port <port> --unit <unit>');
 
-  const port = parseInt(args.port) || registry.findAvailablePort();
+  let port = registry.findAvailablePort();
+  if (args.port) {
+    const parsedPort = parseInt(args.port);
+    if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      return err('Invalid port number provided.');
+    }
+    port = parsedPort;
+  }
+
   const unit = args.unit || '';
   const description = args.description || `A2A Agent: ${name}`;
+
+  // Warn if URL doesn't use 127.0.0.1, reinforcing the security model
+  if (args.url && !args.url.includes('127.0.0.1') && !args.url.includes('localhost')) {
+    console.warn(`${C.yellow}Warning: URL provided does not use 127.0.0.1. A2A single-host model strongly recommends binding to localhost only.${C.reset}`);
+  }
   const url = args.url || `http://127.0.0.1:${port}`;
 
   const agentCard = {
