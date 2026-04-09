@@ -1,0 +1,38 @@
+# NOTICE
+
+## a2a-local
+
+An operational layer for running A2A-compatible agents on single-host environments.
+
+This project is NOT affiliated with, endorsed by, or connected to the A2A Protocol project,
+Google, the Linux Foundation, or any other organization.
+
+## Third-Party Software
+
+### @a2a-js/sdk
+
+This project uses `@a2a-js/sdk` (v0.3.13), the official JavaScript SDK for the A2A Protocol.
+
+- Repository: https://github.com/a2aproject/a2a-js
+- License: Apache License 2.0 (see below)
+
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+### uuid
+
+This project transitively depends on `uuid` via `@a2a-js/sdk`.
+
+- Repository: https://github.com/uuidjs/uuid
+- License: MIT License
