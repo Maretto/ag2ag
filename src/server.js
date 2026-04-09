@@ -30,6 +30,7 @@ class AgentServer {
     });
 
     return new Promise((resolve, reject) => {
+      // Force bind to 127.0.0.1 for security, honoring the single-host localhost-only design
       this.server.listen(this.port, '127.0.0.1', () => {
         resolve({ port: this.port, agent: this.agentName });
       });

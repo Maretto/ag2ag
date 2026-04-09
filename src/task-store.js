@@ -50,13 +50,18 @@ class TaskStore {
     try {
       if (!fs.existsSync(file)) return;
       const lines = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         try {
           const task = JSON.parse(line);
           this._memory.set(this._key(agentName, task.id), task);
-        } catch (_) {}
+        } catch (err) {
+          console.warn(`[TaskStore] Warning: Failed to parse task at line ${i + 1} for agent "${agentName}": ${err.message}`);
+        }
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error(`[TaskStore] Error reading file for agent "${agentName}": ${err.message}`);
+    }
   }
 
   _appendTask(agentName, task) {

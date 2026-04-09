@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-cd /root/.openclaw/workspace/creations/a2a-local
 
 # Kill any leftover on port 5001
 kill $(lsof -ti:5001) 2>/dev/null || true
