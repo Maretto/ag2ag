@@ -10,7 +10,7 @@ const http = require('http');
 
 class AgentClient {
   constructor(options = {}) {
-    this.timeout = options.timeout || 30000;
+    this.timeout = options.timeout || 120000; // 2min default for individual requests
   }
 
   async _request(port, method, path, body = null) {
@@ -32,9 +32,6 @@ class AgentClient {
             const parsed = JSON.parse(data);
             resolve({ status: res.statusCode, data: parsed });
           } catch (e) {
-            if (data && res.statusCode >= 200 && res.statusCode < 300) {
-               console.warn(`[AgentClient] Warning: Failed to parse JSON response: ${e.message}`);
-            }
             resolve({ status: res.statusCode, data });
           }
         });
@@ -68,81 +65,26 @@ class AgentClient {
     return this._request(port, 'DELETE', `/task/${taskId}`);
   }
 
-  async streamTask(port, taskId, onEvent) {
-    return new Promise((resolve, reject) => {
-      const opts = {
-        hostname: '127.0.0.1',
-        port,
-        path: `/task/${taskId}/stream`,
-        method: 'GET',
-        headers: { 'Accept': 'text/event-stream' },
-        timeout: this.timeout,
-      };
-
-      const req = http.request(opts, res => {
-        if (res.statusCode !== 200) {
-           return reject(new Error(`Stream failed with status ${res.statusCode}`));
-        }
-        
-        let buffer = '';
-        res.on('data', chunk => {
-          buffer += chunk.toString();
-          let lines = buffer.split('\n\n');
-          buffer = lines.pop(); // keep the incomplete part
-          
-          for (let line of lines) {
-             if (line.startsWith('data: ')) {
-               try {
-                 const data = JSON.parse(line.substring(6));
-                 if (data.type === 'end') {
-                    resolve();
-                 } else {
-                    onEvent(data);
-                 }
-               } catch (e) {}
-             }
-          }
-        });
-        
-        res.on('end', resolve);
-      });
-
-      req.on('error', reject);
-      req.end();
-    });
-  }
-
   // Poll task until completed/failed/canceled/rejected or timeout
   // Checks HTTP status before trusting response body
   async waitForTask(port, taskId, options = {}) {
     const interval = options.interval || 1000;
-    const timeout = options.timeout || 60000;
+    const timeout = options.timeout || 300000; // 5min default for waitForTask polling
     const start = Date.now();
-    let consecutiveErrors = 0;
 
     while (Date.now() - start < timeout) {
-      try {
-        const res = await this.getTask(port, taskId);
-        consecutiveErrors = 0; // reset on success
+      const res = await this.getTask(port, taskId);
 
-        if (res.status === 404) {
-          // Task doesn't exist yet or was deleted — keep polling
-        } else if (res.status >= 500) {
-          throw new Error(`Server error ${res.status} while polling task ${taskId}`);
-        } else if (res.status >= 400) {
-          throw new Error(`Client error ${res.status} while polling task ${taskId}`);
-        } else if (res.data?.status?.state) {
-          const state = res.data.status.state;
-          if (['completed', 'failed', 'canceled', 'rejected'].includes(state)) {
-            return res.data;
-          }
-        }
-      } catch (e) {
-        consecutiveErrors++;
-        console.warn(`[AgentClient] Warning: Error polling task ${taskId} (Attempt ${consecutiveErrors}): ${e.message}`);
-        // If we fail 5 times consecutively, abort instead of trying until full timeout
-        if (consecutiveErrors >= 5) {
-            throw new Error(`Task ${taskId} polling failed after 5 consecutive errors: ${e.message}`);
+      if (res.status === 404) {
+        // Task doesn't exist yet or was deleted — keep polling
+      } else if (res.status >= 500) {
+        throw new Error(`Server error ${res.status} while polling task ${taskId}`);
+      } else if (res.status >= 400) {
+        throw new Error(`Client error ${res.status} while polling task ${taskId}`);
+      } else if (res.data?.status?.state) {
+        const state = res.data.status.state;
+        if (['completed', 'failed', 'canceled', 'rejected'].includes(state)) {
+          return res.data;
         }
       }
       await new Promise(r => setTimeout(r, interval));
