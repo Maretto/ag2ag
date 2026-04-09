@@ -60,6 +60,18 @@ echo ""
 echo "=== 9. Lifecycle: status of real service ==="
 node src/cli.js status --health
 
+echo ""
+echo "=== 10. CLI clean tasks === "
+node src/cli.js clean
+
+echo ""
+echo "=== 11. CLI UI sanity check === "
+node src/cli.js ui &
+UI_PID=$!
+sleep 2
+curl -s http://127.0.0.1:5000/api/agents > /dev/null && echo "UI API reachable" || echo "UI API failed"
+kill $UI_PID 2>/dev/null
+
 # Cleanup
 kill $ECHO_PID 2>/dev/null
 wait $ECHO_PID 2>/dev/null

@@ -141,6 +141,33 @@ class TaskStore {
     const prefix = `${agentName}:`;
     return Array.from(this._memory.keys()).filter(k => k.startsWith(prefix)).length;
   }
+
+  prune(agentName, maxDays) {
+    this._loadTasks(agentName);
+    const prefix = `${agentName}:`;
+    const cutoffTime = Date.now() - (maxDays * 24 * 60 * 60 * 1000);
+    let deletedCount = 0;
+
+    for (const [key, task] of this._memory.entries()) {
+      if (key.startsWith(prefix)) {
+        const timestampStr = task.status?.timestamp || task.createdAt;
+        let taskTime = 0;
+        if (timestampStr) {
+           taskTime = new Date(timestampStr).getTime();
+        }
+
+        if (taskTime > 0 && taskTime < cutoffTime) {
+          this._memory.delete(key);
+          deletedCount++;
+        }
+      }
+    }
+
+    if (deletedCount > 0) {
+      this._writeAll(agentName);
+    }
+    return deletedCount;
+  }
 }
 
 module.exports = { TaskStore };

@@ -115,8 +115,10 @@ class Lifecycle {
       after = 'network.target',
       restart = 'on-failure',
       restartSec = 5,
-      user = 'root',
+      user,
     } = options;
+
+    const systemUser = user || 'root';
 
     const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
     const unitName = `ag2ag-${safeName}`;
@@ -134,7 +136,7 @@ After=${after}
 
 [Service]
 Type=simple
-User=${user}
+User=${systemUser}
 WorkingDirectory=${workingDir}
 ExecStart=/usr/bin/node ${scriptPath}
 Restart=${restart}
