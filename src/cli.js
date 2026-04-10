@@ -341,8 +341,8 @@ async function main() {
   }
 }
 
-module.exports = { parseArgs, parseMs };
-
 if (require.main === module) {
   main().catch(e => err(e.message));
+} else {
+  module.exports = { parseArgs, parseMs };
 }
