@@ -2,9 +2,7 @@
 
 **Run A2A-compatible agents on a single host. Node.js + systemd. No Docker. No Kubernetes.**
 
-> ⚠️ **Experimental.** Validated on a small single-host setup (6 agents, 1 VPS). Not production-ready. See [When to use](#when-to-use--when-not-to-use) and [SECURITY.md](SECURITY.md).
-
-Runs on a VPS, homelab server, or dev VM. No Docker. No Kubernetes. Just Node.js + systemd.
+> ⚠️ **Experimental.** Validated on a single-host setup (6+ agents, 1 VPS). Not production-ready. See [When to use](#when-to-use--when-not-to-use) and [SECURITY.md](SECURITY.md).
 
 Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk).
 
@@ -23,20 +21,23 @@ Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-
 
 **Do NOT use ag2ag if:**
 - You need multi-host or distributed deployment
-- You need high concurrency (untested under parallel load)
 - You need authentication, encryption, or network-level security
 - You're building a production system requiring isolation between agents
-- You need streaming responses (SSE not implemented)
 
 ---
 
 ## What it does
 
-- **Registry** — local JSON file tracking all agents, ports, systemd units
-- **Lifecycle** — start, stop, restart agents via systemd
+- **Registry** — local JSON file tracking all agents, ports, systemd units. Supports schema migration for future versions.
+- **Lifecycle** — start, stop, restart agents via systemd with `--user` flag support
 - **Discovery** — `GET /card` on each agent for A2A-compatible AgentCards
 - **Messaging** — send messages between agents on localhost
-- **Task persistence** — JSONL files survive restarts
+- **Task persistence** — JSONL files survive restarts. Auto-cleanup of old tasks (configurable retention).
+- **SSE Streaming** — `/task/:id/stream` for real-time task updates via Server-Sent Events
+- **Rate limiting** — sliding window per agent (configurable via env vars)
+- **Health & Metrics** — `/health` and `/metrics` endpoints for observability
+- **Config module** — centralized configuration with environment variable overrides
+- **Jules integration** — CLI command to interact with Google Jules API for code generation
 - **CLI** — manage everything from the terminal
 
 ## Quick start
@@ -61,6 +62,15 @@ ag2ag card my-agent
 
 # Send a message
 ag2ag call my-agent "hello"
+
+# View logs with priority filter
+ag2ag logs my-agent --priority err
+
+# Clean old tasks
+ag2ag clean --days 7
+
+# Start web dashboard
+ag2ag ui --port 8080
 ```
 
 ## Real output
@@ -76,20 +86,6 @@ $ ag2ag status --health
  ●    echo-agent         :5000   echo-agent.service       responding
 ```
 
-```
-$ ag2ag call health-proxy "ecosystem health"
-
-📊 Ecosystem Health Report
-
-🌐 API Gateway: UP (2min uptime)
-📡 Mesh Ping: 4/6 services UP
-
-  🟢 API Gateway: UP | 14ms | up 100%
-  🟢 Mesh Ping: UP | 8ms | up 100%
-  🟢 Internal API: UP | 16ms | up 100%
-  🔴 Sandbox: DOWN | 13ms | up 0%
-```
-
 ## CLI commands
 
 ```
@@ -101,7 +97,10 @@ ag2ag start|stop|restart      Systemd lifecycle management
 ag2ag status [--health]       Show agents (with live HTTP check)
 ag2ag card <name>             Show AgentCard (live or from registry)
 ag2ag call <name> <message>   Send A2A message, wait for response
-ag2ag logs <name>             journalctl for the agent
+ag2ag logs <name>             journalctl for the agent (--lines N, --priority LEVEL)
+ag2ag clean [--days N]        Clean tasks older than N days (default 7)
+ag2ag ui [--port N]           Start local web dashboard
+ag2ag jules <subcommand>      Interact with Jules API (create, status, approve, list, activities)
 ```
 
 ## Building an agent
@@ -140,14 +139,41 @@ See `examples/` for complete agents:
 - **echo-agent.js** — minimal A2A protocol validation
 - **health-proxy.js** — real agent that queries other agents for ecosystem health
 
+## Configuration
+
+All configuration is centralized in `src/config.js` with environment variable overrides:
+
+| Env Variable | Default | Description |
+|---|---|---|
+| `AG2AG_PORT` | 5001 | Default HTTP port |
+| `AG2AG_BIND_HOST` | 127.0.0.1 | Network interface (keep localhost!) |
+| `AG2AG_MAX_BODY_SIZE` | 1048576 (1MB) | Max request body size in bytes |
+| `AG2AG_RATE_LIMIT_MAX` | 60 | Max tasks per agent per window |
+| `AG2AG_RATE_LIMIT_WINDOW_MS` | 60000 (60s) | Rate limit sliding window |
+| `AG2AG_CLEANUP_INTERVAL_MS` | 86400000 (24h) | Auto-cleanup interval |
+| `AG2AG_CLEANUP_MAX_DAYS` | 7 | Days to retain completed tasks |
+| `AG2AG_SSE_KEEPALIVE_MS` | 15000 (15s) | SSE heartbeat interval |
+
+## Testing
+
+```bash
+npm test              # Run all tests
+npm run test:unit     # Unit tests only
+npm run test:concurrency  # Concurrency tests
+```
+
+Test suites: `cli`, `config`, `lifecycle`, `registry`, `server`, `task-store`, `concurrency`.
+
 ## Stack
 
 | Component | Choice |
 |---|---|
 | HTTP | Node.js built-in `http` (no Express) |
 | Process management | systemd |
-| Registry | JSON file |
-| Task persistence | JSONL per agent |
+| Registry | JSON file with schema migration |
+| Task persistence | JSONL per agent, async Mutex for writes |
+| Rate limiting | Sliding window (in-memory) |
+| SSE | EventEmitter-based |
 | A2A compliance | `@a2a-js/sdk` v0.3.13 |
 | External dependencies | 1 |
 
@@ -168,7 +194,7 @@ See `examples/` for complete agents:
 A2A (Agent-to-Agent) is an open protocol by the Linux Foundation for AI agent interoperability. It defines how agents discover each other's capabilities and collaborate. See [a2a-protocol.org](https://a2a-protocol.org).
 
 **How is this different from the A2A SDK?**
-The `@a2a-js/sdk` provides protocol types and server helpers. ag2ag adds the operational layer on top: local registry, systemd lifecycle management, CLI, task persistence, and single-host conventions.
+The `@a2a-js/sdk` provides protocol types and server helpers. ag2ag adds the operational layer on top: local registry, systemd lifecycle management, CLI, task persistence, rate limiting, SSE streaming, and single-host conventions.
 
 **Can I run AI agents with this?**
 Yes. Any agent that exposes an A2A-compatible HTTP interface works. The handler function receives messages and returns responses — you decide what the agent does (call an LLM, query a database, monitor services, etc).
@@ -179,16 +205,14 @@ Lifecycle commands (start/stop/restart) require systemd. But registry, discovery
 **Is this secure?**
 Not for production. All communication is localhost HTTP with no authentication. See [SECURITY.md](SECURITY.md) for known risks and mitigations.
 
-**How do I run AI agents locally?**
-Install ag2ag, register your agents with their ports, start them. They discover each other via AgentCards and communicate via A2A messages on localhost.
-
 **What Node.js version is required?**
 Node.js 18+ (uses `fetch`, `crypto.randomUUID`). Tested on v22.
 
 ## Tested on
 
 - Ubuntu 22.04 LTS, Node.js v22, Contabo VPS
-- 6 agents registered, 2 A2A-discoverable services, 1 composition agent
+- 6+ agents registered, A2A-discoverable services, composition agents
+- Concurrency tested with parallel load (see `test/concurrency.test.js`)
 - See [`docs/writeup.md`](docs/writeup.md) for the full experiment report
 
 ## License
