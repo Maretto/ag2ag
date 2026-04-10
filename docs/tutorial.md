@@ -17,10 +17,14 @@ That's what [ag2ag](https://github.com/Maretto/ag2ag) does.
 ag2ag is an open-source operational layer for running A2A-compatible agents on a single host. It provides:
 
 - **Local registry** — JSON file tracking all your agents, their ports, and systemd units
-- **Lifecycle management** — start, stop, restart agents via systemd
+- **Lifecycle management** — start, stop, restart agents via systemd with `--user` support
 - **Discovery** — each agent exposes an AgentCard at `GET /card`
 - **Messaging** — agents send messages to each other on localhost
-- **Task persistence** — JSONL files that survive restarts
+- **Task persistence** — JSONL files that survive restarts, with auto-cleanup
+- **SSE Streaming** — real-time task updates via Server-Sent Events
+- **Rate limiting** — sliding window per agent to prevent abuse
+- **Health & Metrics** — built-in observability endpoints
+- **Config module** — centralized settings with environment variable overrides
 - **CLI** — manage everything from the terminal
 
 One external dependency: [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk). Everything else is Node.js built-ins.
@@ -77,7 +81,6 @@ const card = {
 };
 
 async function handleMessage(message, task) {
-  // Extract text from the incoming message
   const text = message.parts?.[0]?.text || 'unknown';
 
   return {
@@ -139,14 +142,12 @@ const card = {
 async function handleMessage(message, task) {
   const text = message.parts?.[0]?.text || 'hello from orchestrator';
 
-  // Call the greeter agent
   const client = new AgentClient();
   const result = await client.sendMessage(5001, {
     role: 'user',
     parts: [{ type: 'text', text }],
   });
 
-  // Wait for completion
   const completed = await client.waitForTask(5001, result.data.id, {
     interval: 500,
     timeout: 10000,
@@ -197,18 +198,51 @@ ag2ag start greeter
 # Check status
 ag2ag status --health
 
-# View logs
-ag2ag logs greeter
+# View logs with priority filter
+ag2ag logs greeter --priority err
 ```
 
 Agents now survive reboots, restart on failure, and integrate with your server's logging.
+
+## Configuration
+
+All settings are centralized and configurable via environment variables:
+
+```bash
+# Override defaults
+AG2AG_PORT=5005 ag2ag start my-agent
+AG2AG_RATE_LIMIT_MAX=100 AG2AG_RATE_LIMIT_WINDOW_MS=120000 ag2ag start my-agent
+```
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `AG2AG_PORT` | 5001 | Default HTTP port |
+| `AG2AG_BIND_HOST` | 127.0.0.1 | Network interface |
+| `AG2AG_MAX_BODY_SIZE` | 1MB | Max request body |
+| `AG2AG_RATE_LIMIT_MAX` | 60 | Tasks per agent per window |
+| `AG2AG_RATE_LIMIT_WINDOW_MS` | 60s | Rate limit window |
+| `AG2AG_CLEANUP_MAX_DAYS` | 7 | Task retention period |
+
+## Additional Commands
+
+```bash
+# Clean old tasks
+ag2ag clean --days 7
+
+# Start web dashboard
+ag2ag ui --port 8080
+
+# Interact with Jules API for code generation
+ag2ag jules create "Add error handling" --repo my-project
+ag2ag jules status <session-id>
+ag2ag jules approve <session-id>
+```
 
 ## Real-World Example: Health Proxy
 
 I use this in production with a **Health Proxy** agent that queries multiple services and returns an aggregated health report:
 
 ```javascript
-// Simplified — the real version queries API Gateway + Mesh Ping
 async function handleMessage(message, task) {
   const client = new AgentClient();
 
@@ -230,13 +264,22 @@ async function handleMessage(message, task) {
 
 This agent doesn't know about the other agents at build time — it discovers them at runtime via their AgentCards.
 
+## Testing
+
+ag2ag includes comprehensive test suites:
+
+```bash
+npm test              # All tests
+npm run test:unit     # Unit tests (cli, config, lifecycle, registry, server, task-store)
+npm run test:concurrency  # Concurrency stress tests
+```
+
 ## Security Considerations
 
 ag2ag is designed for **localhost-only** environments. Important limitations:
 
 - **No authentication** — all communication is unencrypted HTTP on loopback
 - **No inter-agent isolation** — agents run as systemd services, typically under the same user
-- **No concurrency testing** — JSONL persistence hasn't been stress-tested under parallel writes
 - **Body limit** — 1MB max payload per request
 
 For more details, see [SECURITY.md](https://github.com/Maretto/ag2ag/blob/main/SECURITY.md).
@@ -245,7 +288,7 @@ For more details, see [SECURITY.md](https://github.com/Maretto/ag2ag/blob/main/S
 
 | Situation | Use |
 |---|---|
-| Single VPS, 2-20 agents | ✅ ag2ag |
+| Single VPS, 2-20 agents | ag2ag |
 | Multi-host, distributed | Docker Compose, Kubernetes |
 | Need auth/encryption | Build your own auth layer or use a service mesh |
 | Just managing Node.js processes | PM2 |
@@ -253,7 +296,7 @@ For more details, see [SECURITY.md](https://github.com/Maretto/ag2ag/blob/main/S
 
 ## What's Next
 
-ag2ag is experimental (v0.2.0) but functional. It's been validated with 6 agents on a single VPS, including real composition patterns.
+ag2ag is experimental but functional. It's been validated with 6+ agents on a single VPS, including real composition patterns and concurrency stress testing.
 
 If you're experimenting with the A2A protocol and want a lightweight way to run agents without container overhead, give it a try:
 
