@@ -240,7 +240,66 @@ async function cmdLogs(name, args) {
   console.log(lifecycle.getLogs(name, parseInt(args.lines) || 50, args.priority || null));
 }
 
+
+// ─── Jules Commands ────────────────────────────────────────────────────────
+
+async function cmdJules(subcommand, args) {
+  const { JulesClient } = require('./jules-client');
+  const jules = new JulesClient();
+
+  if (!subcommand) {
+    return err('Usage: ag2ag jules <create|status|approve|list|activities>');
+  }
+
+  try {
+    switch (subcommand) {
+      case 'list': {
+        const res = await jules.listSources();
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+      case 'create': {
+        if (!args.prompt || !args.repo) {
+          return err('Usage: ag2ag jules create --prompt "..." --repo <repo>');
+        }
+        const res = await jules.createSession(args.prompt, args.repo);
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+      case 'status': {
+        if (!args.id) {
+          return err('Usage: ag2ag jules status --id SESSION_ID');
+        }
+        const res = await jules.pollSession(args.id);
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+      case 'approve': {
+        if (!args.id) {
+          return err('Usage: ag2ag jules approve --id SESSION_ID');
+        }
+        const res = await jules.approvePlan(args.id);
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+      case 'activities': {
+        if (!args.id) {
+          return err('Usage: ag2ag jules activities --id SESSION_ID');
+        }
+        const res = await jules.listActivities(args.id);
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+      default:
+        err(`Unknown jules subcommand: ${subcommand}`);
+    }
+  } catch (e) {
+    err(`Jules API Error: ${e.message}`);
+  }
+}
+
 // ─── Argument Parsing ──────────────────────────────────────────────────────
+
 
 function parseArgs(argv) {
   const args = { _: [], _message: '' };
@@ -281,6 +340,9 @@ ${C.bold}Commands:${C.reset}
   call <name> <message> [options]   Send A2A message to agent
   list                              List all registered agents
   logs <name> [--lines N] [--priority LEVEL]  Show agent logs (journalctl)
+  clean [--days N]                  Clean tasks older than N days (default 7)
+  ui [--port N]                     Start local web dashboard
+  jules <subcommand>                Interact with Jules API (create, status, approve, list, activities)
 
 ${C.bold}Register Options:${C.reset}
   --port <port>                     HTTP port (auto-assigned if omitted)
@@ -337,6 +399,9 @@ async function main() {
     case 'call': return cmdCall(name, args);
     case 'list': return cmdList();
     case 'logs': return cmdLogs(name, args);
+    case 'clean': return cmdClean(args);
+    case 'ui': return cmdUi(args);
+    case 'jules': return cmdJules(name, args);
     default: err(`Unknown command: ${command}`); showHelp();
   }
 }
