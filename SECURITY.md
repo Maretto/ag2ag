@@ -28,15 +28,23 @@ The JSON registry (`config/registry.json`) is the source of truth for routing an
 
 ### JSONL Data Persistence
 
-Tasks and artifacts survive restarts in `data/tasks/*.jsonl`. May persist prompt contents, diagnostic outputs, or other sensitive data. No retention policy or sanitization.
+Tasks and artifacts survive restarts in `data/tasks/*.jsonl`. May persist prompt contents, diagnostic outputs, or other sensitive data. A retention policy exists (`ag2ag clean --days N`, default 7 days) but no automatic sanitization of sensitive content within retained tasks.
 
 ### Aggregator Agents Enable Lateral Movement
 
 Agents like Health Proxy query multiple peers and aggregate real operational data. A compromised aggregator already has a roadmap to enumerate and interact with the ecosystem.
 
-### Untested Under Concurrency
+### Concurrency Under Load
 
-No concurrency testing performed. Potential for JSONL corruption, registry race conditions, or unpredictable behavior under parallel load.
+The TaskStore uses a Promise-based Mutex to serialize writes per-agent, and a sliding-window rate limiter prevents burst overload. Concurrency tests (`test/concurrency.test.js`) validate stability under parallel load. The in-memory Mutex resets on process restart — acceptable for single-host but means a crash during a write could leave a partial JSONL line. Rate limiting is per-agent only; coordinated burst across multiple agents is not limited.
+
+### Rate Limiting Bypass
+
+Rate limiting is per-agent and in-memory (resets on restart). An attacker with local access can bypass it by sending requests faster than the configured window or by restarting the agent process. The rate limiter protects against accidental overload, not adversarial abuse.
+
+### Body Size Limit
+
+A 1MB body limit (`AG2AG_MAX_BODY_SIZE`) prevents oversized payloads but does not validate content structure. Malformed JSON within the limit still reaches the handler.
 
 ## Minimum Operational Recommendations
 
@@ -44,6 +52,9 @@ No concurrency testing performed. Potential for JSONL corruption, registry race 
 2. **Dedicated user per service** when possible — separate systemd users reduce blast radius
 3. **Restrict file permissions** on `config/registry.json` and `data/tasks/*.jsonl` — `chmod 600`, owned by service user
 4. **Never expose A2A ports externally** without authentication. Use SSH or WireGuard tunneling instead
+5. **Configure rate limits** via `AG2AG_RATE_LIMIT_MAX` and `AG2AG_RATE_LIMIT_WINDOW_MS` to match your expected load
+6. **Run `ag2ag clean` regularly** via cron to minimize data persistence exposure
+7. **Use `--user` flag** on `ag2ag register` to isolate agent processes with dedicated systemd users
 
 ## Reporting
 
