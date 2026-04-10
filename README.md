@@ -23,10 +23,8 @@ Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-
 
 **Do NOT use ag2ag if:**
 - You need multi-host or distributed deployment
-- You need high concurrency (untested under parallel load)
 - You need authentication, encryption, or network-level security
 - You're building a production system requiring isolation between agents
-- You need streaming responses (SSE not implemented)
 
 ---
 

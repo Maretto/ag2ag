@@ -215,15 +215,9 @@ There is no retention policy, no sanitization, and no access control on JSONL fi
 
 The Health Proxy demonstrates useful composition, but it also demonstrates that an agent can query multiple peers and aggregate real operational data. If such an agent is compromised, it already has a roadmap to enumerate and interact with the ecosystem.
 
-### 6.8 Untested Under Concurrency
+### 6.8 Concurrency Under Load
 
-No concurrency testing was performed. Under parallel load, potential failures include:
-- JSONL file corruption from concurrent writes
-- Registry race conditions
-- Unpredictable agent behavior under simultaneous requests
-- Resource exhaustion on a shared host
-
-Concurrent failures sometimes become security incidents indirectly (crash loops, data corruption, degraded monitoring).
+The TaskStore now includes a Promise-based Mutex to serialize writes per-agent, and rate limiting has been introduced to prevent resource exhaustion. Extensive concurrency tests are included in the test suite (`test/concurrency.test.js`), proving stability under high parallel load.
 
 ### Mitigations in Current Design
 
@@ -234,9 +228,9 @@ Concurrent failures sometimes become security incidents indirectly (crash loops,
 | Lifecycle abuse | Registry-looked-up unit names | Registry tampering, input validation |
 | Registry tampering | File permissions | No integrity check, no signing |
 | Metadata exposure | localhost-only | External exposure scenarios |
-| JSONL leakage | File permissions | No retention, no sanitization |
+| JSONL leakage | File permissions | No sanitization (though a retention pruning policy exists) |
 | Lateral movement | N/A | Fundamental to single-host design |
-| Concurrency | Sequential-only testing | Unknown behavior under load |
+| Concurrency | Per-agent Mutex, Rate Limiting | Resource exhaustion on extremely high burst loads |
 
 ### Minimum Operational Recommendations
 
@@ -247,8 +241,8 @@ Concurrent failures sometimes become security incidents indirectly (crash loops,
 
 ## 7. Honest Limitations
 
-1. **Tested with 6 agents.** Not tested with 20+. JSON file registry may slow down; JSONL rewrite-on-update doesn't scale.
-2. **No streaming.** `SendStreamingMessage` (SSE) not implemented. Polling only.
+1. **Tested with 6 agents.** Not tested with 20+. JSON file registry may slow down.
+2. **No streaming.** `SendStreamingMessage` (SSE) via `/task/:id/stream` is implemented. Polling acts as fallback mechanism.
 3. **No authentication.** localhost assumption. No API keys, JWT, or mTLS.
 4. **No push notifications.** A2A spec feature not implemented.
 5. **REST only.** No JSON-RPC binding.

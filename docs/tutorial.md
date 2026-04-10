@@ -236,7 +236,6 @@ ag2ag is designed for **localhost-only** environments. Important limitations:
 
 - **No authentication** — all communication is unencrypted HTTP on loopback
 - **No inter-agent isolation** — agents run as systemd services, typically under the same user
-- **No concurrency testing** — JSONL persistence hasn't been stress-tested under parallel writes
 - **Body limit** — 1MB max payload per request
 
 For more details, see [SECURITY.md](https://github.com/Maretto/ag2ag/blob/main/SECURITY.md).
