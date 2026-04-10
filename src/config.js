@@ -35,7 +35,7 @@ module.exports = {
   CLEANUP_MAX_DAYS: parseInt(process.env.AG2AG_CLEANUP_MAX_DAYS, 10) || 7,
 
   // ── SSE ──────────────────────────────────────────────────────────────────────
-  /** Fallback polling interval for SSE when the EventEmitter has not fired */
+  /** Interval (ms) for SSE heartbeat comment lines that prevent proxy/client timeouts */
   SSE_KEEPALIVE_MS: parseInt(process.env.AG2AG_SSE_KEEPALIVE_MS, 10) || 15_000,
 
   // ── Metadata ─────────────────────────────────────────────────────────────────

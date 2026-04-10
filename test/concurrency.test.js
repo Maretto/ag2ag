@@ -137,10 +137,6 @@ describe('AgentServer — concurrent HTTP task submissions', () => {
   before(async () => {
     port = 15200 + Math.floor(Math.random() * 100);
 
-    // Temporarily disable rate limiting for this test
-    const cfg = require('../src/config');
-    cfg.RATE_LIMIT_MAX = 10_000;
-
     server = new AgentServer({
       agentCard: {
         schemaVersion: '1.0',
@@ -153,6 +149,9 @@ describe('AgentServer — concurrent HTTP task submissions', () => {
       agentName: AGENT,
       port,
       taskStoreDir: tmpDir(),
+      // Set a generous rate limit so stress submissions are not throttled
+      rateLimitMax: 10_000,
+      rateLimitWindowMs: 60_000,
     });
     await server.start();
   });

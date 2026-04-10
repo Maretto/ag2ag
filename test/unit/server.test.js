@@ -165,21 +165,16 @@ describe('AgentServer', () => {
 
   describe('rate limiting', () => {
     test('returns 429 after exceeding limit', async () => {
-      // Override rate limit config for this test via a fresh server with tight limits
-      const { AgentServer: AS } = require('../../src/server');
-      const cfg = require('../../src/config');
-      const savedMax = cfg.RATE_LIMIT_MAX;
-      const savedWindow = cfg.RATE_LIMIT_WINDOW_MS;
-      // Temporarily set very low limits
-      cfg.RATE_LIMIT_MAX = 2;
-      cfg.RATE_LIMIT_WINDOW_MS = 60_000;
-
+      // Use constructor options to set a tight rate limit — avoids mutating
+      // the shared config module and prevents test pollution.
       const p2 = port + 10;
-      const s2 = new AS({
+      const s2 = new AgentServer({
         agentCard: makeAgentCard('rate-test', p2),
         agentName: 'rate-test',
         port: p2,
         taskStoreDir: tmpDir(),
+        rateLimitMax: 2,        // allow only 2 tasks
+        rateLimitWindowMs: 60_000,
       });
       await s2.start();
 
@@ -191,8 +186,6 @@ describe('AgentServer', () => {
         assert.equal(status, 429);
       } finally {
         await s2.stop();
-        cfg.RATE_LIMIT_MAX = savedMax;
-        cfg.RATE_LIMIT_WINDOW_MS = savedWindow;
       }
     });
   });

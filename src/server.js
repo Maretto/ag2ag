@@ -26,6 +26,11 @@ class AgentServer {
     this.taskStore = new TaskStore({ storeDir: options.taskStoreDir });
     this.server = null;
 
+    // Rate-limit configuration — prefer constructor options so callers (e.g. tests)
+    // can override without mutating the shared config module.
+    this._rateLimitMax = options.rateLimitMax != null ? options.rateLimitMax : config.RATE_LIMIT_MAX;
+    this._rateLimitWindowMs = options.rateLimitWindowMs != null ? options.rateLimitWindowMs : config.RATE_LIMIT_WINDOW_MS;
+
     // EventEmitter for SSE — keyed by taskId
     this._emitter = new EventEmitter();
     this._emitter.setMaxListeners(0); // allow many SSE clients
@@ -40,7 +45,7 @@ class AgentServer {
     };
 
     // Rate limiting — sliding window per agent name
-    // Map<agentName, number[]> — array of request timestamps
+    // Map<agentName, number[]> — array of request timestamps within the current window
     this._rateBuckets = new Map();
   }
 
@@ -55,25 +60,19 @@ class AgentServer {
    */
   _checkRateLimit(agentName) {
     const now = Date.now();
-    const window = config.RATE_LIMIT_WINDOW_MS;
-    const max = config.RATE_LIMIT_MAX;
+    const cutoff = now - this._rateLimitWindowMs;
 
-    if (!this._rateBuckets.has(agentName)) {
-      this._rateBuckets.set(agentName, []);
-    }
+    // Use filter (O(n)) instead of repeated shift() (O(n²)) to evict expired entries
+    const prev = this._rateBuckets.get(agentName) || [];
+    const current = prev.filter(t => t >= cutoff);
 
-    const timestamps = this._rateBuckets.get(agentName);
-    // Drop timestamps outside the current window
-    const cutoff = now - window;
-    while (timestamps.length > 0 && timestamps[0] < cutoff) {
-      timestamps.shift();
-    }
-
-    if (timestamps.length >= max) {
+    if (current.length >= this._rateLimitMax) {
+      this._rateBuckets.set(agentName, current);
       return false; // over limit
     }
 
-    timestamps.push(now);
+    current.push(now);
+    this._rateBuckets.set(agentName, current);
     return true;
   }
 
@@ -177,7 +176,7 @@ class AgentServer {
         if (!this._checkRateLimit(this.agentName)) {
           return this._json(res, 429, {
             error: 'Too many tasks — rate limit exceeded',
-            retryAfterMs: config.RATE_LIMIT_WINDOW_MS,
+            retryAfterMs: this._rateLimitWindowMs,
           });
         }
 
@@ -259,9 +258,10 @@ class AgentServer {
       return res.end();
     }
 
-    // Keep-alive heartbeat so proxies don't close idle connections
+    // Keep-alive heartbeat so proxies don't close idle connections.
+    // Uses the SSE comment syntax (': ...') which clients must ignore per spec.
     const keepAlive = setInterval(() => {
-      res.write(': keepalive\n\n');
+      res.write(': keep-alive\n\n');
     }, config.SSE_KEEPALIVE_MS);
 
     const onUpdate = (updatedTask) => {

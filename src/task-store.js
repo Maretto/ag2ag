@@ -38,8 +38,11 @@ class _Mutex {
     const prev = this._tails.get(key) || Promise.resolve();
     // Schedule fn after whatever is currently in the queue.
     // `next` resolves/rejects with the return value of fn.
+    // We pass `fn` as both the fulfilment and rejection handler so that a
+    // failure in one queued operation does not stall the entire queue — the
+    // next operation always runs regardless of whether the previous one threw.
     const next = prev.then(fn, fn);
-    // Keep only a no-reject tail so future callers don't get stale errors.
+    // Keep only a no-reject tail so future callers don't receive stale errors.
     this._tails.set(key, next.then(() => {}, () => {}));
     return next;
   }
