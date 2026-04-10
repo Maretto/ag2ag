@@ -1,4 +1,4 @@
-# a2a-local — An Operational Layer for A2A on Single-Host Environments
+# ag2ag — An Operational Layer for A2A on Single-Host Environments
 
 > A Technical Experiment Report — v0.1.0, April 2026
 
@@ -215,15 +215,9 @@ There is no retention policy, no sanitization, and no access control on JSONL fi
 
 The Health Proxy demonstrates useful composition, but it also demonstrates that an agent can query multiple peers and aggregate real operational data. If such an agent is compromised, it already has a roadmap to enumerate and interact with the ecosystem.
 
-### 6.8 Untested Under Concurrency
+### 6.8 Concurrency
 
-No concurrency testing was performed. Under parallel load, potential failures include:
-- JSONL file corruption from concurrent writes
-- Registry race conditions
-- Unpredictable agent behavior under simultaneous requests
-- Resource exhaustion on a shared host
-
-Concurrent failures sometimes become security incidents indirectly (crash loops, data corruption, degraded monitoring).
+The TaskStore now includes a Promise-based Mutex to serialize writes per-agent, and rate limiting has been introduced to prevent resource exhaustion. Concurrency tests are included in the test suite (`test/concurrency.test.js`), proving stability under parallel load. The in-memory Mutex resets on process restart, which is acceptable for the single-host model.
 
 ### Mitigations in Current Design
 
@@ -234,9 +228,9 @@ Concurrent failures sometimes become security incidents indirectly (crash loops,
 | Lifecycle abuse | Registry-looked-up unit names | Registry tampering, input validation |
 | Registry tampering | File permissions | No integrity check, no signing |
 | Metadata exposure | localhost-only | External exposure scenarios |
-| JSONL leakage | File permissions | No retention, no sanitization |
+| JSONL leakage | File permissions | No sanitization (retention pruning exists via `ag2ag clean`) |
 | Lateral movement | N/A | Fundamental to single-host design |
-| Concurrency | Sequential-only testing | Unknown behavior under load |
+| Concurrency | Per-agent Mutex, Rate Limiting | Resource exhaustion on extremely high burst loads |
 
 ### Minimum Operational Recommendations
 
@@ -247,11 +241,12 @@ Concurrent failures sometimes become security incidents indirectly (crash loops,
 
 ## 7. Honest Limitations
 
-1. **Tested with 6 agents.** Not tested with 20+. JSON file registry may slow down; JSONL rewrite-on-update doesn't scale.
-2. **No streaming.** `SendStreamingMessage` (SSE) not implemented. Polling only.
+1. **Tested with 6 agents.** Not tested with 20+. JSON file registry may slow down.
+2. **SSE via `/task/:id/stream`.** Implemented with EventEmitter-based push. Polling acts as fallback mechanism.
 3. **No authentication.** localhost assumption. No API keys, JWT, or mTLS.
 4. **No push notifications.** A2A spec feature not implemented.
 5. **REST only.** No JSON-RPC binding.
+6. **No push notifications.** A2A spec feature not implemented.
 6. **SDK version lag.** Using v0.3.13 of `@a2a-js/sdk`. Spec is v1.0.0. Types may diverge.
 7. **No chained composition tested.** Health Proxy calls 2 agents. Agent chains of 3+ are untested.
 8. **No concurrency testing.** All tests were sequential. Behavior under parallel load unknown.
