@@ -12,7 +12,7 @@ const { AgentClient, DEFAULTS } = require('./client');
 const path = require('path');
 const fs = require('fs');
 
-const registry = new Registry();
+const registry = new Registry(process.env.AG2AG_REGISTRY_PATH);
 const lifecycle = new Lifecycle(registry);
 
 const C = {
@@ -341,4 +341,8 @@ async function main() {
   }
 }
 
-main().catch(e => err(e.message));
+module.exports = { parseArgs, parseMs };
+
+if (require.main === module) {
+  main().catch(e => err(e.message));
+}
