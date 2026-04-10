@@ -95,11 +95,35 @@ class Lifecycle {
     };
   }
 
-  getLogs(agentName, lines = 50) {
+  /**
+   * Fetch recent log lines for an agent from journalctl.
+   * @param {string} agentName
+   * @param {number} [lines=50]     Maximum number of lines to return (capped at 500).
+   * @param {string|null} [priority] Optional journalctl priority filter.
+   *   Accepted values: emerg|alert|crit|err|warning|notice|info|debug  (or 0–7).
+   *   When null or undefined, all priorities are returned.
+   */
+  getLogs(agentName, lines = 50, priority = null) {
     const resolved = this._resolveUnit(agentName);
     if (resolved.error) return resolved.error;
     const safeLines = Math.max(1, Math.min(parseInt(lines) || 50, 500));
-    const r = run(['--no-pager', `-n${safeLines}`, '-u', resolved.unit]);
+
+    const args = ['--no-pager', `-n${safeLines}`, '-u', resolved.unit];
+
+    // Validate and apply optional priority filter
+    if (priority !== null && priority !== undefined) {
+      const VALID_PRIORITIES = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug',
+        '0', '1', '2', '3', '4', '5', '6', '7'];
+      const p = String(priority);
+      if (VALID_PRIORITIES.includes(p)) {
+        // Insert -p LEVEL before the unit filter for clarity
+        args.splice(1, 0, '-p', p);
+      } else {
+        return `Invalid log priority: "${priority}". Use one of: ${VALID_PRIORITIES.join(', ')}`;
+      }
+    }
+
+    const r = run(args);
     return r.ok ? r.output : `Could not read logs for ${resolved.unit}`;
   }
 

@@ -17,10 +17,34 @@ class Registry {
     this._data = null;
   }
 
+  /**
+   * Migrate registry data from older schema versions to the current one.
+   * Add a new `if` block here for each future version bump.
+   * @param {object} data  Raw parsed JSON from disk.
+   * @returns {object}     Migrated data object.
+   */
+  _migrate(data) {
+    if (!data || typeof data !== 'object') {
+      return { agents: [], version: '1.0' };
+    }
+    // Ensure the agents array exists (pre-1.0 might be missing it)
+    if (!Array.isArray(data.agents)) {
+      data.agents = [];
+    }
+    // Normalise version field
+    if (!data.version) {
+      data.version = '1.0';
+    }
+    // Future migrations go here, e.g.:
+    // if (data.version === '1.0') { data = this._migrateV1toV2(data); }
+    return data;
+  }
+
   _load() {
     if (this._data) return this._data;
     try {
-      this._data = JSON.parse(fs.readFileSync(this.path, 'utf8'));
+      const raw = JSON.parse(fs.readFileSync(this.path, 'utf8'));
+      this._data = this._migrate(raw);
     } catch (e) {
       this._data = { agents: [], version: '1.0' };
     }

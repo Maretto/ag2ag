@@ -59,7 +59,17 @@ async function cmdInit() {
 async function cmdRegister(name, args) {
   if (!name) return err('Usage: ag2ag register <name> --port <port> --unit <unit>');
 
-  const port = parseInt(args.port) || registry.findAvailablePort();
+  // Validate port if explicitly provided
+  let port;
+  if (args.port !== undefined) {
+    port = parseInt(args.port, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      return err(`Invalid port: "${args.port}" — must be a number between 1 and 65535`);
+    }
+  } else {
+    port = registry.findAvailablePort();
+  }
+
   const unit = args.unit || '';
   const description = args.description || `A2A Agent: ${name}`;
   const url = args.url || `http://127.0.0.1:${port}`;
@@ -227,7 +237,7 @@ async function cmdList() {
 
 async function cmdLogs(name, args) {
   if (!name) return err('Usage: ag2ag logs <name>');
-  console.log(lifecycle.getLogs(name, parseInt(args.lines) || 50));
+  console.log(lifecycle.getLogs(name, parseInt(args.lines) || 50, args.priority || null));
 }
 
 // ─── Argument Parsing ──────────────────────────────────────────────────────
@@ -270,7 +280,7 @@ ${C.bold}Commands:${C.reset}
   card <name>                       Show agent's AgentCard (live or registry)
   call <name> <message> [options]   Send A2A message to agent
   list                              List all registered agents
-  logs <name> [--lines N]           Show agent logs (journalctl)
+  logs <name> [--lines N] [--priority LEVEL]  Show agent logs (journalctl)
 
 ${C.bold}Register Options:${C.reset}
   --port <port>                     HTTP port (auto-assigned if omitted)
