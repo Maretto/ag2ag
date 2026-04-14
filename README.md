@@ -2,7 +2,7 @@
 
 **Run A2A-compatible agents on a single host. Node.js + systemd. No Docker. No Kubernetes.**
 
-> ⚠️ **Experimental.** Validated on a single-host setup (6+ agents, 1 VPS). Not production-ready. See [When to use](#when-to-use--when-not-to-use) and [SECURITY.md](SECURITY.md).
+> Works on a single host with 13+ agents in production. Not designed for multi-host or distributed deployment.
 
 Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk).
 
@@ -39,6 +39,12 @@ Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-
 - **Config module** — centralized configuration with environment variable overrides
 - **Jules integration** — CLI command to interact with Google Jules API for code generation
 - **CLI** — manage everything from the terminal
+- **Synchronous calls** — `POST /call` endpoint that blocks until handler completion
+- **Request logging** — automatic method/path/status/duration logging via `res.on('finish')`
+- **SIGHUP hot-reload** — reload rate limits and cleanup config without restart
+- **Payload validation with dual format support** — accepts both A2A format (role+parts) and direct JSON
+- **Enhanced /health** — memory usage (RSS, heap), task counts by state, degraded flag
+- **Task pruning by count** — `CLEANUP_MAX_TASKS` limits terminal tasks per agent
 
 ## Quick start
 
@@ -135,6 +141,13 @@ const server = new AgentServer({
 server.start();
 ```
 
+```python
+# Python client — direct JSON format
+import requests
+resp = requests.post("http://localhost:5001/task", json={"keyword": "kubernetes", "days": 30})
+print(resp.json())
+```
+
 See `examples/` for complete agents:
 - **echo-agent.js** — minimal A2A protocol validation
 - **health-proxy.js** — real agent that queries other agents for ecosystem health
@@ -214,9 +227,17 @@ Node.js 18+ (uses `fetch`, `crypto.randomUUID`). Tested on v22.
 ## Tested on
 
 - Ubuntu 22.04 LTS, Node.js v22, Contabo VPS
-- 6+ agents registered, A2A-discoverable services, composition agents
+- 13+ agents registered, A2A-discoverable services, composition agents. Running since April 2026 on a production VPS with real workloads (dataset pipeline, code generation gateway, health monitoring)
 - Concurrency tested with parallel load (see `test/concurrency.test.js`)
 - See [`docs/writeup.md`](docs/writeup.md) for the full experiment report
+
+## Version History
+
+- **v0.4.1** — Dual payload format support (A2A + direct JSON)
+- **v0.4.0** — Synchronous /call, request logging, SIGHUP hot-reload, enhanced /health, task pruning, payload validation
+- **v0.3.0** — Web dashboard, SSE streaming, task pruning CLI, `--user` flag
+- **v0.2.0** — Security hardening (atomic writes, body limits, randomUUID)
+- **v0.1.0** — Initial release
 
 ## License
 
