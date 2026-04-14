@@ -15,7 +15,7 @@ const path = require('path');
 const os = require('os');
 const config = require('./config');
 
-const DEFAULT_STORE_DIR = path.join(__dirname, '..', 'data', 'tasks');
+const DEFAULT_STORE_DIR = process.env.AG2AG_STORE_DIR || path.join(__dirname, '..', 'data', 'tasks');
 
 // ---------------------------------------------------------------------------
 // Async Mutex — serialises write operations per agent
@@ -191,14 +191,18 @@ class TaskStore {
     return Array.from(this._memory.keys()).filter(k => k.startsWith(prefix)).length;
   }
 
-  /** Prune tasks older than maxDays.  Returns a Promise<number> (deleted count). */
-  prune(agentName, maxDays) {
+  /** Prune tasks older than maxDays and limits total retained terminal tasks to maxTasks. Returns a Promise<number> (deleted count). */
+  prune(agentName, maxDays, maxTasks) {
     return this._mutex.run(agentName, () => {
       this._loadTasks(agentName);
       const prefix = `${agentName}:`;
       const cutoffTime = Date.now() - (maxDays * 24 * 60 * 60 * 1000);
       let deletedCount = 0;
 
+      const TERMINAL_STATES = ['completed', 'failed', 'canceled', 'rejected'];
+      const terminalTasks = [];
+
+      // Pass 1: Prune by TTL and collect remaining terminal tasks
       for (const [key, task] of this._memory.entries()) {
         if (key.startsWith(prefix)) {
           const timestampStr = task.status?.timestamp || task.createdAt;
@@ -207,10 +211,25 @@ class TaskStore {
             taskTime = new Date(timestampStr).getTime();
           }
 
-          if (taskTime > 0 && taskTime < cutoffTime) {
+          const isTerminal = TERMINAL_STATES.includes(task.status?.state);
+
+          if (isTerminal && taskTime > 0 && taskTime < cutoffTime) {
             this._memory.delete(key);
             deletedCount++;
+          } else if (isTerminal) {
+            terminalTasks.push({ key, time: taskTime });
           }
+        }
+      }
+
+      // Pass 2: Prune by max count (keep newest maxTasks)
+      if (maxTasks !== undefined && terminalTasks.length > maxTasks) {
+        // Sort oldest first
+        terminalTasks.sort((a, b) => a.time - b.time);
+        const toDeleteCount = terminalTasks.length - maxTasks;
+        for (let i = 0; i < toDeleteCount; i++) {
+          this._memory.delete(terminalTasks[i].key);
+          deletedCount++;
         }
       }
 
@@ -228,17 +247,19 @@ class TaskStore {
    * @param {string[]} agentNames  Agents to clean up.
    * @param {number}   [maxDays]   Tasks older than this are removed.
    * @param {number}   [intervalMs] How often to run the cleanup.
+   * @param {number}   [maxTasks]  Max number of terminal tasks to keep.
    */
-  startAutoCleanup(agentNames, maxDays, intervalMs) {
+  startAutoCleanup(agentNames, maxDays, intervalMs, maxTasks) {
     const days = maxDays || config.CLEANUP_MAX_DAYS;
     const interval = intervalMs || config.CLEANUP_INTERVAL_MS;
+    const maxTasksConfig = maxTasks || config.CLEANUP_MAX_TASKS;
 
     if (this._cleanupTimer) clearInterval(this._cleanupTimer);
 
     this._cleanupTimer = setInterval(async () => {
       for (const name of agentNames) {
         try {
-          const n = await this.prune(name, days);
+          const n = await this.prune(name, days, maxTasksConfig);
           if (n > 0) {
             console.log(`[TaskStore] Auto-cleanup: removed ${n} old task(s) for agent "${name}"`);
           }

@@ -152,7 +152,10 @@ All configuration is centralized in `src/config.js` with environment variable ov
 | `AG2AG_RATE_LIMIT_WINDOW_MS` | 60000 (60s) | Rate limit sliding window |
 | `AG2AG_CLEANUP_INTERVAL_MS` | 86400000 (24h) | Auto-cleanup interval |
 | `AG2AG_CLEANUP_MAX_DAYS` | 7 | Days to retain completed tasks |
+| `AG2AG_CLEANUP_MAX_TASKS` | 1000 | Maximum number of terminal tasks to retain per agent |
 | `AG2AG_SSE_KEEPALIVE_MS` | 15000 (15s) | SSE heartbeat interval |
+| `AG2AG_REGISTRY_PATH` | `../config/registry.json` | Path to the local registry JSON file |
+| `AG2AG_STORE_DIR` | `../data/tasks` | Directory path for task persistence (JSONL files) |
 
 ## Testing
 

@@ -34,6 +34,9 @@ module.exports = {
   /** Number of days to retain completed tasks before pruning */
   CLEANUP_MAX_DAYS: parseInt(process.env.AG2AG_CLEANUP_MAX_DAYS, 10) || 7,
 
+  /** Maximum number of completed/failed tasks to retain per agent */
+  CLEANUP_MAX_TASKS: parseInt(process.env.AG2AG_CLEANUP_MAX_TASKS, 10) || 1000,
+
   // ── SSE ──────────────────────────────────────────────────────────────────────
   /** Interval (ms) for SSE heartbeat comment lines that prevent proxy/client timeouts */
   SSE_KEEPALIVE_MS: parseInt(process.env.AG2AG_SSE_KEEPALIVE_MS, 10) || 15_000,

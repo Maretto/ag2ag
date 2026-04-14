@@ -47,6 +47,22 @@ class AgentServer {
     // Rate limiting — sliding window per agent name
     // Map<agentName, number[]> — array of request timestamps within the current window
     this._rateBuckets = new Map();
+
+    // SIGHUP reload
+    this._onSigHup = () => {
+      console.log(`[ag2ag:${this.agentName}] Received SIGHUP, hot-reloading config...`);
+      // Update config reference without deleting require cache since config exports primitives
+      // For simple primitives, we just re-read the environment overrides if any
+      this._rateLimitMax = options.rateLimitMax != null ? options.rateLimitMax : (parseInt(process.env.AG2AG_RATE_LIMIT_MAX, 10) || 60);
+      this._rateLimitWindowMs = options.rateLimitWindowMs != null ? options.rateLimitWindowMs : (parseInt(process.env.AG2AG_RATE_LIMIT_WINDOW_MS, 10) || 60000);
+
+      // Restart cleanup with potentially new config
+      this.taskStore.stopAutoCleanup();
+      const maxDays = parseInt(process.env.AG2AG_CLEANUP_MAX_DAYS, 10) || 7;
+      const intervalMs = parseInt(process.env.AG2AG_CLEANUP_INTERVAL_MS, 10) || 24 * 60 * 60 * 1000;
+      const maxTasks = parseInt(process.env.AG2AG_CLEANUP_MAX_TASKS, 10) || 1000;
+      this.taskStore.startAutoCleanup([this.agentName], maxDays, intervalMs, maxTasks);
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -82,11 +98,22 @@ class AgentServer {
 
   async start() {
     this.server = http.createServer(async (req, res) => {
+      const startTime = Date.now();
+
+      // Hook into response end to log
+      res.on('finish', () => {
+        const duration = Date.now() - startTime;
+        console.log(`[ag2ag:${this.agentName}] ${req.method} ${req.url} ${res.statusCode} - ${duration}ms`);
+      });
+
       await this._handleRequest(req, res);
     });
 
     // Start auto-cleanup for this agent's tasks
     this.taskStore.startAutoCleanup([this.agentName]);
+
+    // Register SIGHUP listener
+    process.on('SIGHUP', this._onSigHup);
 
     return new Promise((resolve, reject) => {
       // Force bind to 127.0.0.1 for security, honoring the single-host localhost-only design
@@ -98,6 +125,7 @@ class AgentServer {
   }
 
   async stop() {
+    process.removeListener('SIGHUP', this._onSigHup);
     this.taskStore.stopAutoCleanup();
     if (this.server) {
       return new Promise(resolve => this.server.close(resolve));
@@ -119,13 +147,30 @@ class AgentServer {
 
       // GET /health — Health check
       if (req.method === 'GET' && url.pathname === '/health') {
-        return this._json(res, 200, {
-          status: 'ok',
+        const mem = process.memoryUsage();
+        const active = this.taskStore.count(this.agentName);
+
+        // Mark as degraded if active tasks are incredibly high or RSS memory > 500MB
+        const isDegraded = active > 5000 || mem.rss > 500 * 1024 * 1024;
+
+        return this._json(res, isDegraded ? 207 : 200, {
+          status: isDegraded ? 'degraded' : 'ok',
           agent: this.agentName,
           uptime: process.uptime(),
           version: config.VERSION,
+          degraded: isDegraded,
+          memory: {
+            rss: mem.rss,
+            heapTotal: mem.heapTotal,
+            heapUsed: mem.heapUsed,
+            external: mem.external,
+          },
           tasks: {
-            active: this.taskStore.count(this.agentName),
+            active: active,
+            created: this._metrics.tasksCreated,
+            completed: this._metrics.tasksCompleted,
+            failed: this._metrics.tasksFailed,
+            canceled: this._metrics.tasksCanceled,
           },
         });
       }
@@ -171,7 +216,8 @@ class AgentServer {
       }
 
       // POST /task — Create task (SendMessage)
-      if (req.method === 'POST' && url.pathname === '/task') {
+      // POST /call — Create task and wait for completion synchronously
+      if (req.method === 'POST' && (url.pathname === '/task' || url.pathname === '/call')) {
         // Rate limiting
         if (!this._checkRateLimit(this.agentName)) {
           return this._json(res, 429, {
@@ -182,7 +228,24 @@ class AgentServer {
 
         const body = await this._readBody(req, res);
         if (body === null) return; // already responded (413)
-        const message = typeof body === 'string' ? JSON.parse(body) : body;
+
+        let message;
+        try {
+          message = typeof body === 'string' ? JSON.parse(body) : body;
+        } catch (e) {
+          return this._json(res, 400, { error: 'Invalid JSON payload' });
+        }
+
+        // Basic validation: ensure it's an object, has 'role' and 'parts' or is at least a non-null object
+        if (!message || typeof message !== 'object' || Array.isArray(message)) {
+          return this._json(res, 400, { error: 'Payload must be a JSON object' });
+        }
+        if (!message.role || typeof message.role !== 'string') {
+          return this._json(res, 400, { error: 'Validation Error: Missing or invalid "role" field' });
+        }
+        if (!Array.isArray(message.parts)) {
+          return this._json(res, 400, { error: 'Validation Error: "parts" must be an array' });
+        }
 
         const taskId = crypto.randomUUID();
         const task = {
@@ -196,35 +259,65 @@ class AgentServer {
         this._emitter.emit(`task:${taskId}`, task);
         this._metrics.tasksCreated++;
 
-        // Process asynchronously if handler is provided
-        if (this.handler) {
-          setImmediate(async () => {
-            try {
-              task.status.state = 'working';
-              task.status.timestamp = new Date().toISOString();
-              await this.taskStore.set(this.agentName, taskId, task);
-              this._emitter.emit(`task:${taskId}`, task);
+        if (url.pathname === '/call') {
+          // Synchronous execution
+          if (!this.handler) {
+             return this._json(res, 500, { error: 'No handler configured for synchronous call' });
+          }
+          try {
+            task.status.state = 'working';
+            task.status.timestamp = new Date().toISOString();
+            await this.taskStore.set(this.agentName, taskId, task);
+            this._emitter.emit(`task:${taskId}`, task);
 
-              const result = await this.handler(message, task);
+            const result = await this.handler(message, task);
 
-              task.status.state = 'completed';
-              task.status.timestamp = new Date().toISOString();
-              if (result) task.artifacts.push(result);
-              await this.taskStore.set(this.agentName, taskId, task);
-              this._emitter.emit(`task:${taskId}`, task);
-              this._metrics.tasksCompleted++;
-            } catch (e) {
-              task.status.state = 'failed';
-              task.status.timestamp = new Date().toISOString();
-              task.status.message = e.message;
-              await this.taskStore.set(this.agentName, taskId, task);
-              this._emitter.emit(`task:${taskId}`, task);
-              this._metrics.tasksFailed++;
-            }
-          });
+            task.status.state = 'completed';
+            task.status.timestamp = new Date().toISOString();
+            if (result) task.artifacts.push(result);
+            await this.taskStore.set(this.agentName, taskId, task);
+            this._emitter.emit(`task:${taskId}`, task);
+            this._metrics.tasksCompleted++;
+            return this._json(res, 200, task);
+          } catch (e) {
+            task.status.state = 'failed';
+            task.status.timestamp = new Date().toISOString();
+            task.status.message = e.message;
+            await this.taskStore.set(this.agentName, taskId, task);
+            this._emitter.emit(`task:${taskId}`, task);
+            this._metrics.tasksFailed++;
+            return this._json(res, 500, task);
+          }
+        } else {
+          // Asynchronous execution
+          if (this.handler) {
+            setImmediate(async () => {
+              try {
+                task.status.state = 'working';
+                task.status.timestamp = new Date().toISOString();
+                await this.taskStore.set(this.agentName, taskId, task);
+                this._emitter.emit(`task:${taskId}`, task);
+
+                const result = await this.handler(message, task);
+
+                task.status.state = 'completed';
+                task.status.timestamp = new Date().toISOString();
+                if (result) task.artifacts.push(result);
+                await this.taskStore.set(this.agentName, taskId, task);
+                this._emitter.emit(`task:${taskId}`, task);
+                this._metrics.tasksCompleted++;
+              } catch (e) {
+                task.status.state = 'failed';
+                task.status.timestamp = new Date().toISOString();
+                task.status.message = e.message;
+                await this.taskStore.set(this.agentName, taskId, task);
+                this._emitter.emit(`task:${taskId}`, task);
+                this._metrics.tasksFailed++;
+              }
+            });
+          }
+          return this._json(res, 201, task);
         }
-
-        return this._json(res, 201, task);
       }
 
       res.writeHead(404);

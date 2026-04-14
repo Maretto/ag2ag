@@ -1,6 +1,6 @@
 {
   "name": "ag2ag",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "Run A2A-compatible agents on a single host. Node.js + systemd. No Docker. No Kubernetes.",
   "main": "index.js",
   "bin": {
