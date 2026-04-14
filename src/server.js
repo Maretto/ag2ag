@@ -236,15 +236,23 @@ class AgentServer {
           return this._json(res, 400, { error: 'Invalid JSON payload' });
         }
 
-        // Basic validation: ensure it's an object, has 'role' and 'parts' or is at least a non-null object
+        // Basic validation: ensure it's an object, or is at least a non-null object
         if (!message || typeof message !== 'object' || Array.isArray(message)) {
           return this._json(res, 400, { error: 'Payload must be a JSON object' });
         }
-        if (!message.role || typeof message.role !== 'string') {
-          return this._json(res, 400, { error: 'Validation Error: Missing or invalid "role" field' });
-        }
-        if (!Array.isArray(message.parts)) {
-          return this._json(res, 400, { error: 'Validation Error: "parts" must be an array' });
+
+        // Check if it's the A2A format
+        if (message.role && typeof message.role === 'string' && Array.isArray(message.parts)) {
+          // Extract the inner JSON from parts[0].text if possible
+          if (message.parts.length > 0 && message.parts[0].text) {
+            try {
+              message = JSON.parse(message.parts[0].text);
+            } catch (e) {
+              message = message.parts[0].text;
+            }
+          }
+        } else {
+          // Direct JSON format: use as-is. We don't enforce role and parts here anymore.
         }
 
         const taskId = crypto.randomUUID();
