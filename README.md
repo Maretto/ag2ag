@@ -87,7 +87,7 @@ $ ag2ag status --health
 
  STAT NAME               PORT    UNIT                     HEALTH
  ●    api-gateway        :3099   api-gateway.service      responding
- ●    mesh-ping          :3101   mesh-ping.service        responding
+ ●    example-agent       :5000   example-agent.service    responding
  ●    echo-agent         :5000   echo-agent.service       responding
 ```
 
@@ -105,7 +105,6 @@ ag2ag call <name> <message>   Send A2A message, wait for response
 ag2ag logs <name>             journalctl for the agent (--lines N, --priority LEVEL)
 ag2ag clean [--days N]        Clean tasks older than N days (default 7)
 ag2ag ui [--port N]           Start local web dashboard
-ag2ag jules <subcommand>      Interact with Jules API (create, status, approve, list, activities)
 ```
 
 ## Building an agent
@@ -225,8 +224,8 @@ Node.js 18+ (uses `fetch`, `crypto.randomUUID`). Tested on v22.
 
 ## Tested on
 
-- Ubuntu 22.04 LTS, Node.js v22, Contabo VPS
-- 13+ agents registered, A2A-discoverable services, composition agents. Running since April 2026 on a production VPS with real workloads (dataset pipeline, code generation gateway, health monitoring)
+- Ubuntu 22.04 LTS, Node.js v22
+- 13+ agents registered, A2A-discoverable services, composition agents. Running on a production VPS since April 2026
 - Concurrency tested with parallel load (see `test/concurrency.test.js`)
 - See [`docs/writeup.md`](docs/writeup.md) for the full experiment report
 
