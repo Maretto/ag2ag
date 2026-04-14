@@ -37,7 +37,6 @@ Built on top of the official [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-
 - **Rate limiting** — sliding window per agent (configurable via env vars)
 - **Health & Metrics** — `/health` and `/metrics` endpoints for observability
 - **Config module** — centralized configuration with environment variable overrides
-- **Jules integration** — CLI command to interact with Google Jules API for code generation
 - **CLI** — manage everything from the terminal
 - **Synchronous calls** — `POST /call` endpoint that blocks until handler completion
 - **Request logging** — automatic method/path/status/duration logging via `res.on('finish')`
