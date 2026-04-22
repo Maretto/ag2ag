@@ -1,5 +1,7 @@
 # ag2ag
 
+[![CI](https://github.com/Maretto/ag2ag/actions/workflows/ci.yml/badge.svg)](https://github.com/Maretto/ag2ag/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/ag2ag.svg)](https://www.npmjs.com/package/ag2ag)
+
 **Run A2A-compatible agents on a single host. Node.js + systemd. No Docker. No Kubernetes.**
 
 > Works on a single host with 13+ agents in production. Not designed for multi-host or distributed deployment.
