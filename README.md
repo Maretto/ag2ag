@@ -151,6 +151,26 @@ print(resp.json())
 See `examples/` for complete agents:
 - **echo-agent.js** — minimal A2A protocol validation
 - **health-proxy.js** — real agent that queries other agents for ecosystem health
+- **held-agent.js** — async continuation and delegating-bridge flow with held tasks
+
+## Async continuation (held tasks)
+
+When an agent handler delegates tasks to long-running external systems (such as external worker jobs or external coding-agent sessions that take minutes or hours to finish), the handler can hold the task in `working` state instead of completing immediately.
+
+### Delegating Bridge Pattern
+
+1. **Submit**: Client submits a task via `POST /task` (or `POST /call`).
+2. **Hold**: The handler returns `{ hold: true, note: 'Delegated to background system' }`. The server sets `task.metadata.held = true`, keeps `task.status.state = 'working'`, and persists the task.
+3. **Progress**: As external work progresses, call `await server.appendArtifact(taskId, artifact, { source: 'external-system' })` to append progress updates without completing the task.
+4. **Complete / Fail**: Once finished, call `await server.completeTask(taskId, { artifact: finalResult })` or `await server.failTask(taskId, { message: 'Failure reason' })`.
+
+### AgentServer Methods & Options
+
+- **`holdTimeoutMs`** (constructor option, default `0` = disabled): Auto-fails a held task with `status.message = 'held task timeout'` if it remains held past the timeout duration.
+- **`await server.holdTask(taskId, note?)`**: Sets `task.metadata.held = true` (with optional note), keeps `status.state = 'working'`, updates timestamps, persists task, and emits status event.
+- **`await server.appendArtifact(taskId, artifact, { source? })`**: Appends artifact to non-terminal tasks and bumps `updatedAt`. Returns `false` with a log warning if the task is already terminal.
+- **`await server.completeTask(taskId, { artifact?, message? })`**: Transitions task to `completed`, clears hold timeout timer, updates metrics and timestamps. Safe no-op warning if already terminal.
+- **`await server.failTask(taskId, { message?, artifact? })`**: Transitions task to `failed`, clears hold timeout timer, sets failure message, updates metrics and timestamps. Safe no-op warning if already terminal.
 
 ## Configuration
 

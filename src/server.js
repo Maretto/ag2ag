@@ -26,6 +26,10 @@ class AgentServer {
     this.taskStore = new TaskStore({ storeDir: options.taskStoreDir });
     this.server = null;
 
+    // Hold timeout configuration (default 0 = disabled)
+    this._holdTimeoutMs = options.holdTimeoutMs != null ? options.holdTimeoutMs : 0;
+    this._holdTimers = new Map();
+
     // Rate-limit configuration — prefer constructor options so callers (e.g. tests)
     // can override without mutating the shared config module.
     this._rateLimitMax = options.rateLimitMax != null ? options.rateLimitMax : config.RATE_LIMIT_MAX;
@@ -127,9 +131,180 @@ class AgentServer {
   async stop() {
     process.removeListener('SIGHUP', this._onSigHup);
     this.taskStore.stopAutoCleanup();
+    for (const timer of this._holdTimers.values()) {
+      clearTimeout(timer);
+    }
+    this._holdTimers.clear();
     if (this.server) {
       return new Promise(resolve => this.server.close(resolve));
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Async continuation & Task lifecycle public API
+  // ---------------------------------------------------------------------------
+
+  _clearHoldTimer(taskId) {
+    if (this._holdTimers.has(taskId)) {
+      clearTimeout(this._holdTimers.get(taskId));
+      this._holdTimers.delete(taskId);
+    }
+  }
+
+  _formatArtifact(artifact, source) {
+    if (artifact == null) return null;
+    let art;
+    if (typeof artifact === 'object' && artifact !== null) {
+      art = { ...artifact };
+    } else {
+      art = { parts: [{ type: 'text', text: String(artifact) }] };
+    }
+    if (source && !art.source) {
+      art.source = source;
+    }
+    if (!art.timestamp) {
+      art.timestamp = new Date().toISOString();
+    }
+    return art;
+  }
+
+  /**
+   * Hold a task in 'working' state with metadata.held = true.
+   * Starts holdTimeoutMs timer if configured.
+   */
+  async holdTask(taskId, note) {
+    const task = this.taskStore.get(this.agentName, taskId);
+    if (!task) {
+      console.warn(`[ag2ag:${this.agentName}] holdTask called on non-existent task ${taskId}`);
+      return false;
+    }
+    const TERMINAL = ['completed', 'failed', 'canceled', 'rejected'];
+    if (TERMINAL.includes(task.status.state)) {
+      console.warn(`[ag2ag:${this.agentName}] holdTask called on terminal task ${taskId} (state: ${task.status.state})`);
+      return false;
+    }
+
+    task.metadata = task.metadata || {};
+    task.metadata.held = true;
+    if (note != null) {
+      task.metadata.note = note;
+    }
+
+    const now = new Date().toISOString();
+    task.status.state = 'working';
+    task.status.timestamp = now;
+    task.updatedAt = now;
+
+    this._clearHoldTimer(taskId);
+
+    if (this._holdTimeoutMs > 0) {
+      const timer = setTimeout(() => {
+        this._holdTimers.delete(taskId);
+        this.failTask(taskId, { message: 'held task timeout' });
+      }, this._holdTimeoutMs);
+      if (timer.unref) timer.unref();
+      this._holdTimers.set(taskId, timer);
+    }
+
+    await this.taskStore.set(this.agentName, taskId, task);
+    this._emitter.emit(`task:${taskId}`, task);
+    return true;
+  }
+
+  /**
+   * Append an artifact to a non-terminal task.
+   */
+  async appendArtifact(taskId, artifact, options = {}) {
+    const task = this.taskStore.get(this.agentName, taskId);
+    if (!task) {
+      console.warn(`[ag2ag:${this.agentName}] appendArtifact called on non-existent task ${taskId}`);
+      return false;
+    }
+    const TERMINAL = ['completed', 'failed', 'canceled', 'rejected'];
+    if (TERMINAL.includes(task.status.state)) {
+      console.warn(`[ag2ag:${this.agentName}] appendArtifact called on terminal task ${taskId} (state: ${task.status.state})`);
+      return false;
+    }
+
+    const art = this._formatArtifact(artifact, options.source);
+    if (art) {
+      task.artifacts.push(art);
+    }
+
+    const now = new Date().toISOString();
+    task.updatedAt = now;
+
+    await this.taskStore.set(this.agentName, taskId, task);
+    this._emitter.emit(`task:${taskId}`, task);
+    return true;
+  }
+
+  /**
+   * Complete a task cleanly with optional final artifact and status message.
+   */
+  async completeTask(taskId, options = {}) {
+    const task = this.taskStore.get(this.agentName, taskId);
+    if (!task) {
+      console.warn(`[ag2ag:${this.agentName}] completeTask called on non-existent task ${taskId}`);
+      return false;
+    }
+    const TERMINAL = ['completed', 'failed', 'canceled', 'rejected'];
+    if (TERMINAL.includes(task.status.state)) {
+      console.warn(`[ag2ag:${this.agentName}] completeTask called on terminal task ${taskId} (state: ${task.status.state})`);
+      return false;
+    }
+
+    this._clearHoldTimer(taskId);
+
+    const now = new Date().toISOString();
+    task.status.state = 'completed';
+    task.status.timestamp = now;
+    task.updatedAt = now;
+    if (options.message) {
+      task.status.message = options.message;
+    }
+    if (options.artifact) {
+      const art = this._formatArtifact(options.artifact, options.source);
+      if (art) task.artifacts.push(art);
+    }
+
+    this._metrics.tasksCompleted++;
+    await this.taskStore.set(this.agentName, taskId, task);
+    this._emitter.emit(`task:${taskId}`, task);
+    return true;
+  }
+
+  /**
+   * Fail a task with a status message and optional final artifact.
+   */
+  async failTask(taskId, options = {}) {
+    const task = this.taskStore.get(this.agentName, taskId);
+    if (!task) {
+      console.warn(`[ag2ag:${this.agentName}] failTask called on non-existent task ${taskId}`);
+      return false;
+    }
+    const TERMINAL = ['completed', 'failed', 'canceled', 'rejected'];
+    if (TERMINAL.includes(task.status.state)) {
+      console.warn(`[ag2ag:${this.agentName}] failTask called on terminal task ${taskId} (state: ${task.status.state})`);
+      return false;
+    }
+
+    this._clearHoldTimer(taskId);
+
+    const now = new Date().toISOString();
+    task.status.state = 'failed';
+    task.status.timestamp = now;
+    task.status.message = options.message || 'Task failed';
+    task.updatedAt = now;
+    if (options.artifact) {
+      const art = this._formatArtifact(options.artifact, options.source);
+      if (art) task.artifacts.push(art);
+    }
+
+    this._metrics.tasksFailed++;
+    await this.taskStore.set(this.agentName, taskId, task);
+    this._emitter.emit(`task:${taskId}`, task);
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -207,8 +382,11 @@ class AgentServer {
         const taskId = taskMatch[1];
         const task = this.taskStore.get(this.agentName, taskId);
         if (!task) return this._json(res, 404, { error: 'Task not found' });
+        const now = new Date().toISOString();
+        this._clearHoldTimer(taskId);
         task.status.state = 'canceled';
-        task.status.timestamp = new Date().toISOString();
+        task.status.timestamp = now;
+        task.updatedAt = now;
         await this.taskStore.set(this.agentName, taskId, task);
         this._emitter.emit(`task:${taskId}`, task);
         this._metrics.tasksCanceled++;
@@ -256,12 +434,14 @@ class AgentServer {
         }
 
         const taskId = crypto.randomUUID();
+        const now = new Date().toISOString();
         const task = {
           id: taskId,
-          status: { state: 'submitted', timestamp: new Date().toISOString() },
+          status: { state: 'submitted', timestamp: now },
           messages: [message],
           artifacts: [],
           metadata: {},
+          updatedAt: now,
         };
         await this.taskStore.set(this.agentName, taskId, task);
         this._emitter.emit(`task:${taskId}`, task);
@@ -273,54 +453,46 @@ class AgentServer {
              return this._json(res, 500, { error: 'No handler configured for synchronous call' });
           }
           try {
+            const workingTime = new Date().toISOString();
             task.status.state = 'working';
-            task.status.timestamp = new Date().toISOString();
+            task.status.timestamp = workingTime;
+            task.updatedAt = workingTime;
             await this.taskStore.set(this.agentName, taskId, task);
             this._emitter.emit(`task:${taskId}`, task);
 
             const result = await this.handler(message, task);
 
-            task.status.state = 'completed';
-            task.status.timestamp = new Date().toISOString();
-            if (result) task.artifacts.push(result);
-            await this.taskStore.set(this.agentName, taskId, task);
-            this._emitter.emit(`task:${taskId}`, task);
-            this._metrics.tasksCompleted++;
-            return this._json(res, 200, task);
+            if (result && typeof result === 'object' && result.hold === true) {
+              await this.holdTask(taskId, result.note);
+            } else {
+              await this.completeTask(taskId, { artifact: result });
+            }
+            return this._json(res, 200, this.taskStore.get(this.agentName, taskId));
           } catch (e) {
-            task.status.state = 'failed';
-            task.status.timestamp = new Date().toISOString();
-            task.status.message = e.message;
-            await this.taskStore.set(this.agentName, taskId, task);
-            this._emitter.emit(`task:${taskId}`, task);
-            this._metrics.tasksFailed++;
-            return this._json(res, 500, task);
+            await this.failTask(taskId, { message: e.message });
+            return this._json(res, 500, this.taskStore.get(this.agentName, taskId));
           }
         } else {
           // Asynchronous execution
           if (this.handler) {
             setImmediate(async () => {
               try {
+                const workingTime = new Date().toISOString();
                 task.status.state = 'working';
-                task.status.timestamp = new Date().toISOString();
+                task.status.timestamp = workingTime;
+                task.updatedAt = workingTime;
                 await this.taskStore.set(this.agentName, taskId, task);
                 this._emitter.emit(`task:${taskId}`, task);
 
                 const result = await this.handler(message, task);
 
-                task.status.state = 'completed';
-                task.status.timestamp = new Date().toISOString();
-                if (result) task.artifacts.push(result);
-                await this.taskStore.set(this.agentName, taskId, task);
-                this._emitter.emit(`task:${taskId}`, task);
-                this._metrics.tasksCompleted++;
+                if (result && typeof result === 'object' && result.hold === true) {
+                  await this.holdTask(taskId, result.note);
+                } else {
+                  await this.completeTask(taskId, { artifact: result });
+                }
               } catch (e) {
-                task.status.state = 'failed';
-                task.status.timestamp = new Date().toISOString();
-                task.status.message = e.message;
-                await this.taskStore.set(this.agentName, taskId, task);
-                this._emitter.emit(`task:${taskId}`, task);
-                this._metrics.tasksFailed++;
+                await this.failTask(taskId, { message: e.message });
               }
             });
           }
